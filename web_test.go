@@ -52,6 +52,7 @@ func TestSettingsPageEmbedsAssetsWithNonceCSP(t *testing.T) {
 		"is-embedded",
 		"const PATHS",
 		"/v0/management/api-keys",
+		"/v0/management/api-key-aliases",
 		"/v1/models",
 		"/initialize-storage",
 		"/v0/management/plugins/key-model-access/config",
@@ -63,7 +64,10 @@ func TestSettingsPageEmbedsAssetsWithNonceCSP(t *testing.T) {
 		"state.pendingDraft = serializablePolicy()",
 		"const commonWildcards",
 		"cli-proxy-api:caller-scope:v1\\0",
-		"<strong>${escapeHTML(keyLabel(index))}</strong>",
+		"<strong>${escapeHTML(keyDisplayName(key, index))}</strong>",
+		"maskApiKey",
+		"keyDisplayName(key, index)",
+		"api(PATHS.apiKeyAliases, { method: \"GET\" })",
 		":root",
 	} {
 		if !strings.Contains(body, expected) {
