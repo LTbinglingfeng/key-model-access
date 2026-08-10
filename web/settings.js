@@ -9,6 +9,7 @@
     pluginList: "/v0/management/plugins",
     pluginConfig: "/v0/management/plugins/key-model-access/config",
     apiKeys: "/v0/management/api-keys",
+    apiKeyAliases: "/v0/management/api-key-aliases",
     models: "/v1/models"
   };
 
@@ -34,6 +35,7 @@
     token: "",
     status: null,
     keys: [],
+    aliasByHash: {},
     models: [],
     modelsError: "",
     persistenceSetupError: "",
@@ -147,6 +149,21 @@
 
   function keyLabel(index) {
     return `CPA API Key ${String(index + 1).padStart(2, "0")}`;
+  }
+
+  function maskApiKey(value) {
+    const text = String(value || "").trim();
+    if (!text) return "";
+    const visible = text.length < 4 ? 1 : 2;
+    const start = text.slice(0, visible);
+    const end = text.slice(-visible);
+    const maskedLength = Math.max(10 - visible * 2, 1);
+    return `${start}${"*".repeat(maskedLength)}${end}`;
+  }
+
+  function keyDisplayName(key, index) {
+    const alias = key?.hash && state.aliasByHash[key.hash] ? state.aliasByHash[key.hash] : "";
+    return alias || keyLabel(index);
   }
 
   async function api(path, options = {}) {
@@ -291,6 +308,22 @@
     }
   }
 
+  async function fetchApiKeyAliases() {
+    try {
+      const payload = await api(PATHS.apiKeyAliases, { method: "GET" });
+      const items = Array.isArray(payload?.items) ? payload.items : [];
+      const aliasByHash = {};
+      for (const item of items) {
+        const hash = typeof item?.apiKeyHash === "string" ? item.apiKeyHash.trim().toLowerCase() : "";
+        const alias = typeof item?.alias === "string" ? item.alias.trim() : "";
+        if (hash && alias) aliasByHash[hash] = alias;
+      }
+      return aliasByHash;
+    } catch (_) {
+      return {};
+    }
+  }
+
   async function fetchCurrentKeys(options = {}) {
     const payload = await api(PATHS.apiKeys, { method: "GET" });
     const values = Array.isArray(payload?.["api-keys"]) ? payload["api-keys"] : null;
@@ -299,19 +332,24 @@
     const temporaryValues = values.slice();
     const normalizedValues = temporaryValues.map((value) => String(value).trim()).filter(Boolean);
     try {
-      const [scopes, catalog] = await Promise.all([
-        Promise.all(normalizedValues.map((value) => sha256Hex(`cli-proxy-api:caller-scope:v1\0${value}`))),
+      const [keyDetails, catalog] = await Promise.all([
+        Promise.all(normalizedValues.map(async (value) => ({
+          scope: await sha256Hex(`cli-proxy-api:caller-scope:v1\0${value}`),
+          hash: (await sha256Hex(value)).toLowerCase(),
+          mask: maskApiKey(value)
+        }))),
         options.includeCatalog ? fetchModelCatalog(normalizedValues[0] || "") : Promise.resolve(null)
       ]);
       const seen = new Set();
-      const keys = scopes.filter((scope) => {
+      const keys = keyDetails.filter(({ scope }) => {
         if (seen.has(scope)) return false;
         seen.add(scope);
         return true;
-      }).map((scope) => ({
+      }).map(({ scope, hash, mask }) => ({
         scope,
+        hash,
+        mask,
         fingerprint: shortFingerprint(scope),
-        mask: "••••••••••••",
         allow_models: [],
         deny_models: []
       }));
@@ -365,11 +403,12 @@
         persistenceSetupError = error.message || "自动创建插件策略文件失败。";
       }
     }
-    const [policies, keyData] = await Promise.all([
+    const [policies, keyData, aliasByHash] = await Promise.all([
       api(PATHS.policies, { method: "GET" }),
-      fetchCurrentKeys({ includeCatalog: true })
+      fetchCurrentKeys({ includeCatalog: true }),
+      fetchApiKeyAliases()
     ]);
-    return { status, policies, keys: keyData.keys, catalog: keyData.catalog, persistenceSetupError };
+    return { status, policies, keys: keyData.keys, catalog: keyData.catalog, aliasByHash, persistenceSetupError };
   }
 
   function applyPolicyDocument(rawDocument) {
@@ -392,6 +431,7 @@
 
   function installRemoteData(remote, preferredScope = "") {
     state.status = remote.status;
+    state.aliasByHash = remote.aliasByHash || {};
     state.keys = remote.keys;
     state.models = remote.catalog?.models || [];
     state.modelsError = remote.catalog?.error || "";
@@ -538,7 +578,11 @@
   function renderNav() {
     const query = state.search.trim().toLowerCase();
     const visible = state.keys.map((key, index) => ({ key, index })).filter(({ key, index }) =>
-      !query || key.fingerprint.toLowerCase().includes(query) || keyLabel(index).toLowerCase().includes(query)
+      !query
+        || keyDisplayName(key, index).toLowerCase().includes(query)
+        || key.mask.toLowerCase().includes(query)
+        || key.fingerprint.toLowerCase().includes(query)
+        || keyLabel(index).toLowerCase().includes(query)
     );
     nav.innerHTML = `
       <button class="nav-item" type="button" data-select="overview" aria-current="${state.selectedIndex < 0 ? "page" : "false"}">
@@ -547,9 +591,9 @@
       </button>
       <p class="nav-group-label">当前 CPA API Keys</p>
       ${visible.length ? visible.map(({ key, index }) => `
-        <button class="nav-item" type="button" data-select="key" data-index="${index}" aria-current="${state.selectedIndex === index ? "page" : "false"}" aria-label="${escapeHTML(keyLabel(index))}，SHA-256 指纹 ${escapeHTML(key.fingerprint)}">
+        <button class="nav-item" type="button" data-select="key" data-index="${index}" aria-current="${state.selectedIndex === index ? "page" : "false"}" aria-label="${escapeHTML(keyDisplayName(key, index))}，Key ${escapeHTML(key.mask)}，SHA-256 指纹 ${escapeHTML(key.fingerprint)}">
           <span class="nav-icon key">${icons.key}</span>
-          <span class="nav-copy"><strong>${escapeHTML(keyLabel(index))}</strong><span>SHA-256 ${escapeHTML(key.fingerprint)}</span></span>
+          <span class="nav-copy"><strong>${escapeHTML(keyDisplayName(key, index))}</strong><span>Key ${escapeHTML(key.mask)} · SHA-256 ${escapeHTML(key.fingerprint)}</span></span>
         </button>`).join("") : `<p class="empty-nav">${query ? "没有匹配的 Key" : "CPA 当前没有 API Key"}</p>`}
     `;
   }
