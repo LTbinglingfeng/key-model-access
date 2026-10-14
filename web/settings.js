@@ -293,7 +293,8 @@
 
   async function fetchCurrentKeys(options = {}) {
     const payload = await api(PATHS.apiKeys, { method: "GET" });
-    const values = Array.isArray(payload?.["api-keys"]) ? payload["api-keys"] : null;
+    const rawKeys = payload?.["api-keys"];
+    const values = rawKeys === null ? [] : Array.isArray(rawKeys) ? rawKeys : null;
     if (!values) throw new Error("CPA 返回了无法识别的 API Key 列表。");
 
     const temporaryValues = values.slice();
@@ -337,14 +338,30 @@
     throw lastError || new Error("CPA 已保存插件配置，但等待策略文件生效超时。");
   }
 
+  function pluginsDirFromList(pluginList) {
+    // Only /v0/management/plugins.plugins_dir uses Go html.EscapeString.
+    // Replace its five entities in one pass, preserving escaped entity literals.
+    // Legacy hosts with raw entity literals in directory names are ambiguous;
+    // this follows the current host contract, not heuristic/version detection.
+    // Do not add a raw-config fallback here: YAML needs parsing, while JSON
+    // config adds a separate contract/read; server-side path/default/~ resolution
+    // from the list endpoint remains authoritative.
+    const value = typeof pluginList?.plugins_dir === "string" ? pluginList.plugins_dir.trim() : "";
+    return value.replace(/&(?:amp|lt|gt|#34|#39);/g, (entity) => ({
+      "&amp;": "&", "&lt;": "<", "&gt;": ">", "&#34;": '"', "&#39;": "'"
+    })[entity]);
+  }
+
   async function initializeDefaultPersistence() {
     const pluginList = await api(PATHS.pluginList, { method: "GET" });
-    const pluginsDir = typeof pluginList?.plugins_dir === "string" ? pluginList.plugins_dir.trim() : "";
+    const pluginsDir = pluginsDirFromList(pluginList);
     if (!pluginsDir) throw new Error("CPA 未返回有效的 plugins_dir。");
     const initialized = await api(PATHS.initializeStorage, {
       method: "POST",
       body: JSON.stringify({ plugins_dir: pluginsDir })
     });
+    // Plugin RPC6 responses are raw on both legacy host2 and current host6.
+    // Never entity-decode policy paths (or other plugin response fields).
     const policyFile = typeof initialized?.policy_file === "string" ? initialized.policy_file.trim() : "";
     if (!policyFile) throw new Error("插件未返回默认策略文件路径。");
     await api(PATHS.pluginConfig, {

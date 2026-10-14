@@ -18,7 +18,7 @@ CHECKSUM_PATH ?= $(ARCHIVE_PATH).sha256
 CHECKSUMS_PATH ?= $(BUILD_DIR)/checksums.txt
 CPA_DIR ?=
 
-.PHONY: all build test vet check package checksums install clean
+.PHONY: all build test test-web vet check package checksums install clean
 
 all: check build
 
@@ -30,6 +30,11 @@ build:
 
 test:
 	go test ./...
+
+# Optional frontend behavior tests (Node.js 18+; no npm dependencies).
+test-web:
+	node --check web/settings.js
+	node --test web/settings.test.js
 
 vet:
 	go vet ./...

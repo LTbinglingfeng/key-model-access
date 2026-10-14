@@ -7,9 +7,11 @@ import (
 )
 
 const (
-	abiVersion    uint32 = 1
-	schemaVersion uint32 = 2
-	pluginID             = "key-model-access"
+	abiVersion              uint32 = 1
+	rpcSchemaVersion        uint32 = 6 // Raw management responses; no HTML entity rewriting.
+	minimumRPCSchemaVersion uint32 = 2 // Structured interceptor termination.
+	policySchemaVersion            = 2 // Persisted policy format, independent of RPC.
+	pluginID                       = "key-model-access"
 )
 
 var pluginVersion = "0.1.3"

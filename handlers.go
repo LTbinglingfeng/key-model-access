@@ -133,7 +133,8 @@ func managementStatus() ([]byte, error) {
 	return managementJSON(http.StatusOK, map[string]any{
 		"plugin":                  pluginID,
 		"version":                 pluginVersion,
-		"schema_version":          schemaVersion,
+		"schema_version":          rpcSchemaVersion,
+		"policy_schema_version":   policySchemaVersion,
 		"host_schema_version":     hostSchema,
 		"auth_mode":               "cpa_builtin_api_keys",
 		"identity_source":         "Metadata.caller_scope",
@@ -151,7 +152,7 @@ func managementStatus() ([]byte, error) {
 
 func managementPolicies() ([]byte, error) {
 	cfg, snapshot, source, updatedAt, _, _, revision := globalState.currentWithRevision()
-	document := policyDocument{Version: int(schemaVersion), Policies: []policyConfig{}}
+	document := policyDocument{Version: policySchemaVersion, Policies: []policyConfig{}}
 	if !snapshot.BlockAll {
 		document = documentFromConfig(cfg)
 	}

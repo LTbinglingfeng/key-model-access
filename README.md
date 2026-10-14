@@ -19,7 +19,8 @@ CLIProxyAPI（CPA）原生动态库插件。CPA 继续使用顶层 `api-keys` �
 ## 兼容性
 
 - CLIProxyAPI **v7.2.103 或更新版本**。
-- CPA 插件 RPC schema 2，用于 RequestInterceptor 主动返回结构化 `403`。
+- 最低要求 CPA 插件 RPC schema 2，用于 RequestInterceptor 主动返回结构化 `403`；插件最高声明 schema 6，在新后端上保留管理响应的原始业务字符串，避免 HTML 实体转义改变模型规则或路径。
+- RPC schema 与策略文件版本独立：策略仍为 **version 2**，无需迁移。宿主协商 schema 2–5 时，是否转义管理响应取决于宿主实现；使用含特殊字符的路径或规则时建议升级到支持 schema 6 的后端。
 - 支持 CPA 动态插件的 CGO 构建；需要 Go 1.24、C 编译器和 `CGO_ENABLED=1`。
 - 可通过任一 Management API 响应头 `X-CPA-SUPPORT-PLUGIN: 1` 确认 CPA 二进制支持插件。
 
@@ -100,6 +101,8 @@ plugins:
 随后页面会将该路径写入 `plugins.configs.key-model-access.policy_file`，由 CPA 保存配置并触发插件重配置。初始化会保留当前有效的内联 v2 策略；若目标文件已经存在，只会校验并复用，不会覆盖。之后 UI 修改会以 `0600` 权限原子保存，CPA 或插件重启后仍然存在。
 
 之所以由 Web UI 发现目录，而不是由动态库猜测自身路径，是因为 CPA 的插件 ABI 不传递 `plugins.dir`，该目录可自定义，且 Windows 会从临时 shadow copy 加载 DLL。
+
+新版后端的插件列表接口对 `plugins_dir` 使用 HTML 实体转义，UI 仅在该字段读取边界解码一次。旧后端若原样返回含 `&lt;` 等实体字面量的目录名，无法从响应区分两者；此类旧部署应显式配置 `policy_file`，跳过自动目录发现。
 
 如需把策略放到其他位置，可显式配置已有的 YAML 或 TOML 文件：
 
@@ -341,6 +344,7 @@ curl -i "$CPA_URL/v1/chat/completions" \
 gofmt -w types.go
 go test ./...
 go vet ./...
+make test-web # Node.js 18+，无需安装 npm 依赖
 git diff --check
 ```
 

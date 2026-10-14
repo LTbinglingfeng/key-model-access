@@ -150,8 +150,8 @@ func configure(raw []byte) error {
 	if err := decodeJSON(raw, &req); err != nil {
 		return err
 	}
-	cfg := pluginConfig{Version: int(schemaVersion)}
-	if req.SchemaVersion < schemaVersion {
+	cfg := pluginConfig{Version: policySchemaVersion}
+	if req.SchemaVersion < minimumRPCSchemaVersion {
 		globalState.failClosedOrPreserve(cfg, req.SchemaVersion, fmt.Errorf("%s requires CPA plugin RPC schema 2 or newer (CPA v7.2.103+)", pluginID))
 		return nil
 	}
@@ -267,7 +267,7 @@ func decodeStrictYAML(raw []byte, target any) error {
 }
 
 func compileDocument(document policyDocument) (policySnapshot, policyDocument, error) {
-	if document.Version != int(schemaVersion) {
+	if document.Version != policySchemaVersion {
 		return policySnapshot{}, policyDocument{}, fmt.Errorf("unsupported policy version %d; only version 2 is supported", document.Version)
 	}
 	if document.Policies == nil {

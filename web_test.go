@@ -130,7 +130,7 @@ func TestHandleManagementServesSettingsResource(t *testing.T) {
 func TestManagementPoliciesReturnsSafeV2DocumentWhenFailClosed(t *testing.T) {
 	globalState.clear()
 	t.Cleanup(globalState.clear)
-	globalState.failClosedOrPreserve(pluginConfig{Version: 1}, schemaVersion, errTestPolicy)
+	globalState.failClosedOrPreserve(pluginConfig{Version: 1}, rpcSchemaVersion, errTestPolicy)
 
 	raw, err := managementPolicies()
 	if err != nil {

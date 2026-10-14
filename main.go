@@ -113,8 +113,8 @@ func handleMethod(method string, request []byte) ([]byte, error) {
 func pluginRegistration() registration {
 	_, _, _, _, hostSchema, _ := globalState.current()
 	registrationSchema := hostSchema
-	if registrationSchema == 0 || registrationSchema > schemaVersion {
-		registrationSchema = schemaVersion
+	if registrationSchema == 0 || registrationSchema > rpcSchemaVersion {
+		registrationSchema = rpcSchemaVersion
 	}
 	return registration{
 		SchemaVersion: registrationSchema,
@@ -131,7 +131,7 @@ func pluginRegistration() registration {
 			},
 		},
 		Capabilities: capabilities{
-			RequestInterceptor: hostSchema >= schemaVersion,
+			RequestInterceptor: hostSchema >= minimumRPCSchemaVersion,
 			ManagementAPI:      true,
 		},
 	}
