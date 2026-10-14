@@ -161,7 +161,7 @@ UI 不创建、修改或删除 CPA Key，也不会向 `/v0/management/api-keys` 
 
 ### UI 安全边界
 
-- `/v0/management/api-keys` 会把原始 Key 返回给已通过 Management 认证的浏览器。UI 仅在 JavaScript 中短暂用于计算 scope，并用第一个 Key 读取模型目录；随后尽力清空临时数组。原始 Key 不会写入 DOM、Local Storage、Session Storage、URL 或插件策略。
+- `/v0/management/api-keys` 会把原始 Key 返回给已通过 Management 认证的浏览器。UI 仅在 JavaScript 中短暂用于计算 scope，并用第一个 Key 读取模型目录；随后尽力清空临时数组。为便于辨认，UI 只显示每个 Key 的掩码片段（例如 `sk-abcd••••••wxyz`；短 Key 显示更少字符，少于 8 位则完全隐藏）。完整 Key 不会写入 DOM、Local Storage、Session Storage、URL 或插件策略。
 - Management Key 由 CPAMC 决定是否持久化。插件只读解析 CPAMC 的同源会话，在自己的 JavaScript 内存中使用，不会复制或再次写入存储。
 - CPAMC 当前的浏览器端存储是可逆混淆，不是安全边界。同源页面、浏览器扩展和同机恶意软件均属于信任边界。
 - 页面只读同步 CPAMC 的主题，不再维护独立主题偏好。

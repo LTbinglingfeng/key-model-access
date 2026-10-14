@@ -9,71 +9,54 @@
   <style nonce="{{NONCE}}">{{CSS}}</style>
 </head>
 <body>
-  <div class="ambient" aria-hidden="true"></div>
-
   <main id="authGate" class="auth-shell">
     <section class="auth-card" aria-labelledby="authTitle">
-      <div id="sessionIcon" class="brand-mark" aria-hidden="true">
-        <svg viewBox="0 0 24 24"><path d="M7.75 10.25V7.5a4.25 4.25 0 0 1 8.5 0v2.75M6.5 10.25h11a1.5 1.5 0 0 1 1.5 1.5v6.75a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 5 18.5v-6.75a1.5 1.5 0 0 1 1.5-1.5Z"/><path d="M12 14v2.25"/></svg>
-      </div>
-      <p class="eyebrow">CPAMC SESSION</p>
+      <div id="sessionIcon" class="session-icon" aria-hidden="true"></div>
       <h1 id="authTitle">正在接入管理会话</h1>
-      <p id="authMessage" class="auth-copy" role="status" aria-live="polite">正在只读获取 CPAMC 当前连接信息，无需再次输入 Management Key。</p>
+      <p id="authMessage" class="auth-copy" role="status" aria-live="polite">正在读取 CPAMC 当前连接信息，无需再次输入 Management Key。</p>
       <button id="retrySessionButton" class="button secondary wide" type="button" hidden>重新读取会话</button>
-      <div class="security-note">
-        <span class="status-dot neutral" aria-hidden="true"></span>
-        <span>插件只读取 CPAMC 已保存的同源会话，不会复制或再次持久化 Management Key。</span>
-      </div>
+      <p class="auth-footnote">插件只复用 CPAMC 已保存的同源会话，不会复制或持久化 Management Key。</p>
     </section>
   </main>
 
   <div id="app" class="app" hidden>
-    <header class="topbar">
-      <div class="brand">
-        <div class="brand-mark small" aria-hidden="true">
-          <svg viewBox="0 0 24 24"><path d="M7.75 10.25V7.5a4.25 4.25 0 0 1 8.5 0v2.75M6.5 10.25h11a1.5 1.5 0 0 1 1.5 1.5v6.75a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 5 18.5v-6.75a1.5 1.5 0 0 1 1.5-1.5Z"/><path d="M12 14v2.25"/></svg>
-        </div>
-        <div>
-          <strong>模型权限</strong>
-          <span>Key Model Access · CPA</span>
-        </div>
-      </div>
-      <p class="topbar-context">现有 Key 的模型访问策略</p>
-    </header>
-
     <div id="workspace" class="workspace">
       <aside class="sidebar" aria-label="策略导航">
-        <div class="sidebar-head">
-          <div>
-            <p class="section-label">CPA API KEYS</p>
-            <p id="policyCount" class="sidebar-count">0 个当前 Key</p>
-          </div>
-          <span class="readonly-badge">只读来源</span>
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M7.75 10.25V7.5a4.25 4.25 0 0 1 8.5 0v2.75M6.5 10.25h11a1.5 1.5 0 0 1 1.5 1.5v6.75a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 5 18.5v-6.75a1.5 1.5 0 0 1 1.5-1.5Z"/><path d="M12 14v2.25"/></svg>
+          </span>
+          <span class="brand-copy"><strong>模型权限</strong><span>Key Model Access</span></span>
         </div>
-        <div class="search-field">
+        <label class="search-field">
           <span id="searchIcon" aria-hidden="true"></span>
           <input id="searchInput" type="search" placeholder="搜索 Key" autocomplete="off" aria-label="搜索 Key">
-        </div>
+        </label>
         <nav id="policyNav" class="policy-nav"></nav>
-        <div id="persistenceNotice" class="persistence-notice"></div>
+        <footer class="sidebar-foot">
+          <div class="foot-row">
+            <div id="healthBadge" class="health-badge"><span class="status-dot neutral"></span><span>正在连接</span></div>
+            <div class="foot-actions">
+              <button id="reloadButton" class="icon-button" type="button" aria-label="从策略文件重载" title="从策略文件重载"></button>
+              <button id="refreshDataButton" class="icon-button" type="button" aria-label="刷新 CPA Key 与策略" title="刷新 CPA Key 与策略"></button>
+            </div>
+          </div>
+          <p id="persistenceNotice" class="persistence-notice"></p>
+        </footer>
       </aside>
 
       <main class="main-stage">
-        <div class="command-wrap">
-          <div class="commandbar" aria-label="页面操作">
-            <div class="command-state">
-              <span class="command-label">插件状态</span>
-              <div id="healthBadge" class="health-badge"><span class="status-dot"></span><span>正在连接</span></div>
-            </div>
-            <div class="topbar-actions">
-              <button id="refreshDataButton" class="icon-button" type="button" aria-label="刷新 CPA Key 与策略" title="刷新 CPA Key 与策略"></button>
-              <button id="reloadButton" class="button secondary compact" type="button" aria-label="从策略文件重载" title="从策略文件重载"></button>
-              <button id="saveButton" class="button primary compact" type="button" aria-label="保存模型规则" title="保存模型规则" disabled></button>
-            </div>
-          </div>
-        </div>
         <section id="editor" class="editor" aria-live="polite"></section>
       </main>
+    </div>
+
+    <div class="command-wrap">
+      <div id="saveBar" class="commandbar" role="region" aria-label="未保存的修改" data-visible="false">
+        <span class="status-dot warning" aria-hidden="true"></span>
+        <span id="saveBarText" class="commandbar-text">有未保存的修改</span>
+        <kbd class="shortcut" aria-hidden="true">⌘S</kbd>
+        <button id="saveButton" class="button primary compact" type="button" disabled>保存</button>
+      </div>
     </div>
   </div>
 

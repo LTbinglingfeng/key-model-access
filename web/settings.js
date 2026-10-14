@@ -27,6 +27,8 @@
     close: '<svg viewBox="0 0 24 24"><path d="m7 7 10 10M17 7 7 17"/></svg>',
     warning: '<svg viewBox="0 0 24 24"><path d="M12 3 2.8 19h18.4L12 3Z"/><path d="M12 9v4M12 16.5h.01"/></svg>',
     check: '<svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg>',
+    chevronDown: '<svg viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></svg>',
+    chevronRight: '<svg viewBox="0 0 24 24"><path d="m10 7 5 5-5 5"/></svg>',
     spinner: '<svg class="spinner" viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 1-9 9"/><path d="M3 12a9 9 0 0 1 9-9" opacity=".35"/></svg>'
   };
 
@@ -50,7 +52,8 @@
     search: "",
     openPicker: "",
     pickerQuery: "",
-    pickerScroll: 0
+    pickerScroll: 0,
+    pickerAnimate: ""
   };
 
   const $ = (selector) => document.querySelector(selector);
@@ -59,6 +62,7 @@
   const editor = $("#editor");
   const nav = $("#policyNav");
   const saveButton = $("#saveButton");
+  const saveBar = $("#saveBar");
   const reloadButton = $("#reloadButton");
   const refreshDataButton = $("#refreshDataButton");
   const healthBadge = $("#healthBadge");
@@ -291,6 +295,18 @@
     }
   }
 
+  // Only a short head/tail fragment ever leaves this function — enough to tell keys
+  // apart the way CPAMC and other consoles do, never enough to use them. Short keys
+  // reveal proportionally less so a fragment can never approach the full secret.
+  function maskKey(value) {
+    const key = String(value || "");
+    if (key.length < 8) return "••••••";
+    if (key.length < 16) return `${key.slice(0, 2)}••••••${key.slice(-2)}`;
+    const prefix = /^[A-Za-z]{2,4}-/.exec(key)?.[0] || "";
+    const visible = key.length < 24 ? 3 : 4;
+    return `${key.slice(0, prefix.length + visible)}••••••${key.slice(-visible)}`;
+  }
+
   async function fetchCurrentKeys(options = {}) {
     const payload = await api(PATHS.apiKeys, { method: "GET" });
     const rawKeys = payload?.["api-keys"];
@@ -305,17 +321,18 @@
         options.includeCatalog ? fetchModelCatalog(normalizedValues[0] || "") : Promise.resolve(null)
       ]);
       const seen = new Set();
-      const keys = scopes.filter((scope) => {
-        if (seen.has(scope)) return false;
+      const keys = [];
+      scopes.forEach((scope, index) => {
+        if (seen.has(scope)) return;
         seen.add(scope);
-        return true;
-      }).map((scope) => ({
-        scope,
-        fingerprint: shortFingerprint(scope),
-        mask: "••••••••••••",
-        allow_models: [],
-        deny_models: []
-      }));
+        keys.push({
+          scope,
+          fingerprint: shortFingerprint(scope),
+          mask: maskKey(normalizedValues[index]),
+          allow_models: [],
+          deny_models: []
+        });
+      });
       return options.includeCatalog ? { keys, catalog } : keys;
     } finally {
       normalizedValues.fill("");
@@ -494,15 +511,9 @@
     refreshDataButton.disabled = busy || state.modelBusy;
     saveButton.disabled = busy || state.modelBusy || !state.dirty;
     reloadButton.disabled = busy || state.modelBusy || !state.status?.persistent_updates;
-    saveButton.innerHTML = action === "save" && busy
-      ? `${icons.spinner}<span class="label-long">正在保存</span>`
-      : `${icons.save}<span class="label-long">${state.dirty ? "保存修改" : "已保存"}</span>`;
-    reloadButton.innerHTML = action === "reload" && busy
-      ? `${icons.spinner}<span class="label-long">正在重载</span>`
-      : `${icons.file}<span class="label-long">从文件重载</span>`;
-    refreshDataButton.innerHTML = action === "refresh" && busy
-      ? icons.spinner
-      : icons.refresh;
+    saveButton.innerHTML = action === "save" && busy ? `${icons.spinner}<span>保存中</span>` : "保存";
+    reloadButton.innerHTML = action === "reload" && busy ? icons.spinner : icons.file;
+    refreshDataButton.innerHTML = action === "refresh" && busy ? icons.spinner : icons.refresh;
     if (!busy) finalizeEndedSession();
   }
 
@@ -521,13 +532,14 @@
   function syncHeader() {
     const healthy = state.status && !state.status.last_error;
     const warning = state.status?.last_error;
-    healthBadge.innerHTML = `<span class="status-dot ${warning ? "warning" : healthy ? "" : "error"}"></span><span>${escapeHTML(warning ? "策略警告" : healthy ? `Schema v${state.status.schema_version || 2}` : "未连接")}</span>`;
-    healthBadge.title = warning ? state.status.last_error : "插件运行正常";
+    healthBadge.innerHTML = `<span class="status-dot ${warning ? "warning" : healthy ? "" : "error"}"></span><span>${escapeHTML(warning ? "策略警告" : healthy ? `运行正常 · rev-${state.revision}` : "未连接")}</span>`;
+    healthBadge.title = warning ? state.status.last_error : healthy ? `Schema v${state.status.schema_version || 2}` : "";
     saveButton.disabled = state.busy || state.modelBusy || !state.dirty;
     reloadButton.disabled = state.busy || state.modelBusy || !state.status?.persistent_updates;
     reloadButton.title = state.status?.persistent_updates ? "从策略文件重载" : "未配置 policy_file，无法从文件重载";
-    saveButton.innerHTML = `${icons.save}<span class="label-long">${state.dirty ? "保存修改" : "已保存"}</span>`;
-    $("#policyCount").textContent = `${state.keys.length} 个当前 Key`;
+    if (!state.busy) saveButton.textContent = "保存";
+    saveBar.dataset.visible = String(state.dirty);
+    document.documentElement.classList.toggle("has-changes", state.dirty);
   }
 
   function syncPersistence() {
@@ -535,12 +547,14 @@
     if (!state.status) return;
     if (state.status.persistent_updates) {
       notice.className = "persistence-notice";
-      notice.textContent = `策略自动保存到 ${state.status.policy_file}`;
+      notice.innerHTML = `<span>${escapeHTML(state.status.policy_file)}</span>`;
+      notice.title = `策略自动保存到 ${state.status.policy_file}`;
     } else {
       notice.className = "persistence-notice warning";
+      notice.title = "";
       notice.textContent = state.persistenceSetupError
         ? `自动持久化失败：${state.persistenceSetupError} 当前修改仅保存在内存中。`
-        : "当前为内存模式；打开页面时会自动创建插件策略文件。";
+        : "内存模式：修改不会写入文件。";
     }
   }
 
@@ -552,21 +566,29 @@
     });
   }
 
+  function ruleBadge(key) {
+    if (!hasRules(key)) return '<span class="rule-badge muted">默认</span>';
+    const allow = key.allow_models.length ? `<span class="rule-count allow" title="允许规则">${key.allow_models.length}</span>` : "";
+    const deny = key.deny_models.length ? `<span class="rule-count deny" title="拒绝规则">${key.deny_models.length}</span>` : "";
+    return `<span class="rule-badge">${allow}${deny}</span>`;
+  }
+
   function renderNav() {
     const query = state.search.trim().toLowerCase();
     const visible = state.keys.map((key, index) => ({ key, index })).filter(({ key, index }) =>
-      !query || key.fingerprint.toLowerCase().includes(query) || keyLabel(index).toLowerCase().includes(query)
+      !query || key.mask.toLowerCase().includes(query) || key.fingerprint.toLowerCase().includes(query) || keyLabel(index).toLowerCase().includes(query)
     );
     nav.innerHTML = `
       <button class="nav-item" type="button" data-select="overview" aria-current="${state.selectedIndex < 0 ? "page" : "false"}">
         <span class="nav-icon">${icons.overview}</span>
-        <span class="nav-copy"><strong>权限概览</strong><span>认证由 CPA 管理</span></span>
+        <span class="nav-copy"><strong>概览</strong></span>
       </button>
-      <p class="nav-group-label">当前 CPA API Keys</p>
+      <p class="nav-group-label"><span>API Keys</span><span id="policyCount">${state.keys.length}</span></p>
       ${visible.length ? visible.map(({ key, index }) => `
-        <button class="nav-item" type="button" data-select="key" data-index="${index}" aria-current="${state.selectedIndex === index ? "page" : "false"}" aria-label="${escapeHTML(keyLabel(index))}，SHA-256 指纹 ${escapeHTML(key.fingerprint)}">
-          <span class="nav-icon key">${icons.key}</span>
-          <span class="nav-copy"><strong>${escapeHTML(keyLabel(index))}</strong><span>SHA-256 ${escapeHTML(key.fingerprint)}</span></span>
+        <button class="nav-item" type="button" data-select="key" data-index="${index}" aria-current="${state.selectedIndex === index ? "page" : "false"}" aria-label="${escapeHTML(keyLabel(index))}，${escapeHTML(key.mask)}" title="SHA-256 ${escapeHTML(key.fingerprint)}">
+          <span class="nav-icon">${icons.key}</span>
+          <span class="nav-copy"><strong>${escapeHTML(keyLabel(index))}</strong><span>${escapeHTML(key.mask)}</span></span>
+          ${ruleBadge(key)}
         </button>`).join("") : `<p class="empty-nav">${query ? "没有匹配的 Key" : "CPA 当前没有 API Key"}</p>`}
     `;
   }
@@ -589,49 +611,59 @@
     const defaults = state.keys.length - configured;
     const staleCount = state.stalePolicies.length;
     const statusWarning = state.status?.last_error
-      ? `<div class="notice">${icons.warning}<span><strong>最近一次配置存在问题：</strong> ${escapeHTML(state.status.last_error)}。当前仍在使用最后一个有效策略。</span></div>`
+      ? `<div class="notice">${icons.warning}<p><strong>最近一次配置存在问题</strong>${escapeHTML(state.status.last_error)}。当前仍在使用最后一个有效策略。</p></div>`
       : "";
     const staleWarning = staleCount
-      ? `<div class="notice">${icons.warning}<span><strong>${staleCount} 条失效策略：</strong>这些 caller scope 不对应 CPA 当前 Key。保存时会原样保留，不会静默删除；请在确认旧 Key 已永久移除后通过策略文件处理。</span></div>`
+      ? `<div class="notice">${icons.warning}<p><strong>${staleCount} 条失效策略</strong>这些 caller scope 不对应 CPA 当前 Key。保存时会原样保留，不会静默删除；确认旧 Key 已永久移除后，请通过策略文件处理。</p></div>`
       : "";
+    const keyRows = state.keys.map((key, index) => `
+      <button class="key-row" type="button" data-select="key" data-index="${index}">
+        <span class="key-row-name"><strong>${escapeHTML(keyLabel(index))}</strong><span class="mono">${escapeHTML(key.mask)}</span></span>
+        <span class="key-row-rules">${hasRules(key) ? `${rulesSummary(key.allow_models, "允许")}${rulesSummary(key.deny_models, "拒绝", true)}` : '<span class="muted">默认允许全部模型</span>'}</span>
+        <span class="key-row-chevron" aria-hidden="true">${icons.chevronRight}</span>
+      </button>`).join("");
 
     editor.innerHTML = `
       <header class="editor-head">
-        <div class="editor-title-wrap">
-          <p class="editor-kicker">Access overview</p>
-          <h1>模型权限概览</h1>
-          <p class="editor-subtitle">API Key 的创建、删除和生命周期完全由 CPA 管理；此页面只为现有 Key 配置模型规则。</p>
-        </div>
+        <h1>概览</h1>
+        <p class="editor-subtitle">为 CPA 现有 API Key 配置可访问的模型。Key 的创建与删除由 CPA 管理；未配置规则的 Key 默认允许全部模型。</p>
       </header>
       ${statusWarning}
       ${staleWarning}
-      <section class="overview-grid" aria-label="权限统计">
-        ${statCard("当前 CPA Key", state.keys.length, "只读同步")}
-        ${statCard("已配置", configured, "含 allow 或 deny")}
-        ${statCard("默认允许", defaults, "没有模型规则")}
-        ${statCard("失效策略", staleCount, "保存时仍保留", staleCount > 0)}
+      <section class="stats" aria-label="权限统计">
+        ${statCard("API Keys", state.keys.length)}
+        ${statCard("已配置", configured)}
+        ${statCard("默认允许", defaults)}
+        ${statCard("失效策略", staleCount, staleCount > 0)}
       </section>
-      <section class="card">
-        <div class="card-head"><h2>认证边界</h2><p>Key 身份与模型授权相互分离。</p></div>
-        <div class="info-callout">
-          <span class="callout-icon">${icons.key}</span>
-          <div><strong>认证由 CPA 内置 API Keys 管理</strong><p>插件仅接收 CPA 提供的 caller scope，并据此执行 allow_models 与 deny_models。未配置策略或规则为空时，默认允许全部模型。</p></div>
-        </div>
+      <section class="section">
+        <h2 class="section-title">API Keys</h2>
+        <div class="card key-list">${keyRows || '<p class="card-empty">CPA 当前没有 API Key</p>'}</div>
       </section>
-      <section class="card">
-        <div class="card-head"><h2>运行状态</h2><p>来自当前 CPA 插件实例。</p></div>
-        ${statusRow("认证模式", displayAuthMode(state.status?.auth_mode))}
-        ${statusRow("身份来源", state.status?.identity_source || "—")}
-        ${statusRow("未配置 Key", state.status?.unconfigured_key_action === "allow" ? "允许全部模型" : state.status?.unconfigured_key_action || "—")}
-        ${statusRow("后端策略数", state.status?.policy_count ?? "—")}
-        ${statusRow("策略版本", `rev-${state.revision}`)}
-        ${statusRow("策略来源", state.status?.source || "—")}
-        ${statusRow("最后更新", formatDate(state.status?.updated_at))}
+      <section class="section">
+        <h2 class="section-title">运行状态</h2>
+        <dl class="card status-grid">
+          ${statusRow("认证模式", displayAuthMode(state.status?.auth_mode))}
+          ${statusRow("身份来源", state.status?.identity_source || "—")}
+          ${statusRow("未配置 Key", state.status?.unconfigured_key_action === "allow" ? "允许全部模型" : state.status?.unconfigured_key_action || "—")}
+          ${statusRow("后端策略数", state.status?.policy_count ?? "—")}
+          ${statusRow("策略版本", `rev-${state.revision}`)}
+          ${statusRow("策略来源", state.status?.source || "—")}
+          ${statusRow("Schema", `v${state.status?.schema_version || 2}`)}
+          ${statusRow("最后更新", formatDate(state.status?.updated_at))}
+        </dl>
       </section>`;
   }
 
-  function statCard(label, value, note, warning = false) {
-    return `<article class="stat-card ${warning ? "warning" : ""}"><span>${escapeHTML(label)}</span><strong>${escapeHTML(value)}</strong><small>${escapeHTML(note)}</small></article>`;
+  function rulesSummary(models, label, deny = false) {
+    if (!models.length) return "";
+    const preview = models.slice(0, 2).join(", ");
+    const more = models.length > 2 ? ` +${models.length - 2}` : "";
+    return `<span class="rules-summary ${deny ? "deny" : "allow"}"><span class="rules-label">${label}</span><span class="mono">${escapeHTML(preview)}${more}</span></span>`;
+  }
+
+  function statCard(label, value, warning = false) {
+    return `<div class="stat ${warning ? "warning" : ""}"><span>${escapeHTML(label)}</span><strong>${escapeHTML(value)}</strong></div>`;
   }
 
   function displayAuthMode(value) {
@@ -639,26 +671,25 @@
   }
 
   function statusRow(label, value) {
-    return `<div class="setting-row"><div class="setting-copy"><strong>${escapeHTML(label)}</strong></div><div class="setting-control mono">${escapeHTML(value)}</div></div>`;
+    return `<div class="status-item"><dt>${escapeHTML(label)}</dt><dd class="mono">${escapeHTML(value)}</dd></div>`;
   }
 
   function renderKeyEditor(key, index) {
     const empty = !hasRules(key);
     editor.innerHTML = `
       <header class="editor-head">
-        <div class="editor-title-wrap">
-          <p class="editor-kicker">Existing CPA key</p>
-          <h1>${escapeHTML(keyLabel(index))}</h1>
-          <p class="editor-subtitle key-summary"><span>${key.mask}</span><span class="mono">SHA-256 ${escapeHTML(key.fingerprint)}</span></p>
-        </div>
+        <h1>${escapeHTML(keyLabel(index))}</h1>
+        <p class="editor-subtitle key-summary">
+          <span class="key-mask mono">${escapeHTML(key.mask)}</span>
+          <span class="key-fingerprint mono" title="caller scope 指纹">SHA-256 ${escapeHTML(key.fingerprint)}</span>
+          <span class="pill ${empty ? "" : "active"}">${empty ? "默认允许全部模型" : "已配置规则"}</span>
+        </p>
       </header>
-      ${empty ? `<div class="default-notice">${icons.check}<span><strong>当前默认允许全部模型。</strong>从目录中选择允许或拒绝模型后才会为此 Key 写入策略。</span></div>` : ""}
       <section class="card rules-card">
-        <div class="card-head"><h2>模型规则</h2><p>直接从 CPA 可用模型目录中选择；拒绝规则始终优先于允许规则。</p></div>
-        ${modelPicker("allow_models", "允许模型", "设置后，仅允许列表中的模型", key.allow_models, false)}
-        ${modelPicker("deny_models", "拒绝模型", "命中后始终拒绝访问", key.deny_models, true)}
+        ${modelPicker("allow_models", "允许", "设置后，仅允许这些模型", key.allow_models, false)}
+        ${modelPicker("deny_models", "拒绝", "命中即拒绝，优先于允许规则", key.deny_models, true)}
       </section>
-      <div class="privacy-note">Management Key 复用 CPAMC 已保存的同源会话；CPA API Key 只用于计算 caller scope 与读取模型目录，不会写入 DOM、浏览器存储或 URL。</div>`;
+      <p class="privacy-note">页面只显示 Key 的首尾片段用于辨认；完整 Key 仅在内存中短暂用于计算 caller scope 与读取模型目录，不会写入页面、浏览器存储或 URL。</p>`;
     editor.dataset.keyIndex = String(index);
   }
 
@@ -680,7 +711,7 @@
           const outsideCatalog = !wildcard && !state.models.some((candidate) => candidate.id === model);
           return `<span class="chip ${deny ? "deny" : ""}"><span>${escapeHTML(model)}</span>${wildcard ? '<small>通配符</small>' : outsideCatalog ? '<small>目录外</small>' : ""}<button class="chip-remove" type="button" data-action="remove-model" data-kind="${kind}" data-model="${escapeHTML(model)}" aria-label="移除此模型规则">${icons.close}</button></span>`;
         }).join("")
-      : '<span class="empty-chips">尚未选择模型</span>';
+      : `<span class="empty-chips">${deny ? "未拒绝任何模型" : "未限制，允许全部模型"}</span>`;
     const wildcardRow = `<button class="model-option wildcard-option ${wildcardSelected ? "selected" : ""}" type="button" role="option" aria-selected="${wildcardSelected}" data-action="toggle-model" data-kind="${kind}" data-model="*" data-search="全部模型 all models wildcard *">
       <span class="model-checkbox" aria-hidden="true">${wildcardSelected ? icons.check : ""}</span>
       <span class="model-option-copy"><strong>全部模型</strong><small>${deny ? "* · 此 Key 将无法访问任何模型" : "* · 自动包含未来新增模型"}</small></span>
@@ -711,18 +742,18 @@
     }).join("");
 
     return `<div class="model-editor ${deny ? "deny" : ""}">
-      <div class="tag-head"><div><strong>${escapeHTML(title)}</strong><span>${escapeHTML(description)}</span></div><span class="selection-count">${selectedModels.length} 条规则</span></div>
+      <div class="tag-head"><div><strong><span class="kind-dot" aria-hidden="true"></span>${escapeHTML(title)}</strong><span>${escapeHTML(description)}</span></div><span class="selection-count">${selectedModels.length} 条规则</span></div>
+      <div class="chips">${chips}</div>
       <button class="model-trigger ${isOpen ? "open" : ""}" type="button" data-action="toggle-picker" data-kind="${kind}" aria-expanded="${isOpen}">
-        <span>${escapeHTML(summary)}</span><span class="picker-chevron" aria-hidden="true">⌄</span>
+        <span>${escapeHTML(summary)}</span><span class="picker-chevron" aria-hidden="true">${icons.chevronDown}</span>
         ${state.models.length ? `<progress class="selection-meter" max="${state.models.length}" value="${effectiveCatalogCount}" aria-label="已匹配 ${effectiveCatalogCount} / ${state.models.length} 个模型"></progress>` : ""}
       </button>
-      ${isOpen ? `<div class="model-panel">
+      ${isOpen ? `<div class="model-panel ${state.pickerAnimate === kind ? "animate-in" : ""}">
         ${state.models.length ? `<div class="model-search"><span>${icons.search}</span><input type="search" data-model-search="${kind}" value="${escapeHTML(state.pickerQuery)}" autocomplete="off" placeholder="搜索模型…" aria-label="搜索${escapeHTML(title)}"></div>
         <div class="model-list" role="listbox" aria-multiselectable="true">${wildcardRow}${presetRows}${rows}<p class="model-empty" hidden>没有匹配的模型</p></div>
         <div class="model-panel-footer"><span>已匹配 ${effectiveCatalogCount} / ${state.models.length}</span><div><button type="button" data-action="select-all-models" data-kind="${kind}">全选当前目录</button><button type="button" data-action="clear-models" data-kind="${kind}">清空</button></div></div>`
         : `<div class="model-list compact" role="listbox" aria-multiselectable="true">${wildcardRow}</div><div class="catalog-notice"><span>${escapeHTML(state.modelsError || "没有可用模型目录。")}</span><button type="button" data-action="refresh-models">重新加载</button></div>`}
       </div>` : ""}
-      <div class="chips">${chips}</div>
     </div>`;
   }
 
@@ -762,6 +793,7 @@
     key[kind] = nextModels;
     markDirty();
     renderEditor();
+    scheduleNavRender();
     if (state.openPicker === kind) restorePickerView(kind, true);
   }
 
@@ -997,8 +1029,9 @@
     document.documentElement.classList.toggle("is-embedded", window.self !== window.top);
     $("#searchIcon").innerHTML = icons.search;
     refreshDataButton.innerHTML = icons.refresh;
-    reloadButton.innerHTML = `${icons.file}<span class="label-long">从文件重载</span>`;
-    saveButton.innerHTML = `${icons.save}<span class="label-long">已保存</span>`;
+    reloadButton.innerHTML = icons.file;
+    const shortcut = saveBar.querySelector(".shortcut");
+    if (shortcut && !/Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)) shortcut.textContent = "Ctrl S";
     syncTheme();
     try {
       if (window.self !== window.top) {
@@ -1026,29 +1059,39 @@
   reloadButton.addEventListener("click", reload);
   $("#searchInput").addEventListener("input", (event) => { state.search = event.target.value; scheduleNavRender(); });
 
-  nav.addEventListener("click", (event) => {
-    if (state.busy) return;
-    const item = event.target.closest("[data-select]");
-    if (!item) return;
-    state.selectedIndex = item.dataset.select === "overview" ? -1 : Number(item.dataset.index);
+  function selectView(item) {
+    const nextIndex = item.dataset.select === "overview" ? -1 : Number(item.dataset.index);
+    const changed = nextIndex !== state.selectedIndex;
+    state.selectedIndex = nextIndex;
     state.openPicker = "";
     state.pickerQuery = "";
     state.pickerScroll = 0;
     renderNav();
     renderEditor();
+    if (changed) window.scrollTo({ top: 0 });
+  }
+
+  nav.addEventListener("click", (event) => {
+    if (state.busy) return;
+    const item = event.target.closest("[data-select]");
+    if (item) selectView(item);
   });
 
   editor.addEventListener("click", (event) => {
     if (state.busy) return;
     const target = event.target.closest("button");
     if (!target) return;
+    if (target.dataset.select) { selectView(target); return; }
     const action = target.dataset.action;
     const kind = target.dataset.kind;
     if (action === "toggle-picker" && validModelKind(kind)) {
       const opening = state.openPicker !== kind;
       state.openPicker = opening ? kind : "";
       if (opening) { state.pickerQuery = ""; state.pickerScroll = 0; }
+      // Animate only the moment a picker opens; re-renders while toggling models stay still.
+      state.pickerAnimate = opening ? kind : "";
       renderEditor();
+      state.pickerAnimate = "";
       if (opening) restorePickerView(kind, true);
     } else if (action === "toggle-model") {
       if (target.dataset.locked === "true") return;
@@ -1069,6 +1112,13 @@
   });
 
   document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && state.openPicker && !state.busy) {
+      const kind = state.openPicker;
+      state.openPicker = "";
+      renderEditor();
+      editor.querySelector(`[data-action="toggle-picker"][data-kind="${kind}"]`)?.focus();
+      return;
+    }
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s" && !app.hidden) {
       event.preventDefault();
       save();

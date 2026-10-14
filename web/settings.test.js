@@ -84,3 +84,20 @@ test('generic API and policy normalization preserve plugin entity literals', asy
   assert.equal(response.error, '&lt;error&gt;');
   assert.equal(JSON.stringify(helpers.normalizePolicyDocument(response.policy)), JSON.stringify(policy));
 });
+
+test('API keys expose only a masked head/tail fragment, never the full secret', async () => {
+  const cases = [
+    ['sk-proj-a1B2c3D4e5F6g7H8i9J0kLmN', 'sk-proj••••••kLmN'],
+    ['sk-a1B2c3D4e5F6g7H8i9J0kLmNoPqR', 'sk-a1B2••••••oPqR'],
+    ['sk-a1B2c3D4e5F6g7H8', 'sk-a1B••••••7H8'],
+    ['plainkey123', 'pl••••••23'],
+    ['short', '••••••']
+  ];
+  const helpers = load(() => ({ 'api-keys': cases.map(([key]) => key) }));
+  const keys = await helpers.fetchCurrentKeys();
+  assert.equal(JSON.stringify(keys.map((key) => key.mask)), JSON.stringify(cases.map(([, mask]) => mask)));
+  for (const [index, [raw]] of cases.entries()) {
+    assert.ok(!JSON.stringify(keys[index]).includes(raw), 'full key must not survive in key metadata');
+    assert.ok(keys[index].mask.replaceAll('•', '').length <= Math.ceil(raw.length / 2));
+  }
+});
