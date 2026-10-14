@@ -165,6 +165,7 @@ UI 不创建、修改或删除 CPA Key，也不会向 `/v0/management/api-keys` 
 - Management Key 由 CPAMC 决定是否持久化。插件只读解析 CPAMC 的同源会话，在自己的 JavaScript 内存中使用，不会复制或再次写入存储。
 - CPAMC 当前的浏览器端存储是可逆混淆，不是安全边界。同源页面、浏览器扩展和同机恶意软件均属于信任边界。
 - 页面只读同步 CPAMC 的主题，不再维护独立主题偏好。
+- 界面支持简体中文与英文：优先跟随 CPAMC 当前语言（嵌入页 `<html lang>`，其次 `cli-proxy-language` / `i18nextLng`），再按浏览器语言选择；其他语言默认显示英文，切换语言时页面实时更新。
 - 页面响应使用随机 nonce CSP、`frame-ancestors 'self'`、`X-Frame-Options: SAMEORIGIN`、`form-action 'none'` 和 `Cache-Control: no-store`。
 - 应使用 HTTPS、限制 Management API 的网络可达范围，并只在可信浏览器和设备中打开 UI。
 - 页面壳不包含 Key 或策略数据；所有 Management API 数据请求都受 CPA Management Key 保护。

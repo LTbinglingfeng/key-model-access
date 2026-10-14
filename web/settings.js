@@ -14,6 +14,7 @@
 
   const CPAMC_AUTH_KEY = "cli-proxy-auth";
   const CPAMC_THEME_KEY = "cli-proxy-theme";
+  const CPAMC_LANGUAGE_KEY = "cli-proxy-language";
   const OBFUSCATION_PREFIX = "enc::v1::";
   const OBFUSCATION_SALT = "cli-proxy-api-webui::secure-storage";
 
@@ -32,7 +33,321 @@
     spinner: '<svg class="spinner" viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 1-9 9"/><path d="M3 12a9 9 0 0 1 9-9" opacity=".35"/></svg>'
   };
 
+  const plural = (count, one, many) => (Number(count) === 1 ? one : many);
+
+  const MESSAGES = {
+    "zh-CN": {
+      "meta.description": "CPA Key Model Access 设置",
+      "meta.title": "模型权限 · CPA",
+      "brand.title": "模型权限",
+      "session.connectingTitle": "正在接入管理会话",
+      "session.readingMessage": "正在读取 CPAMC 当前连接信息，无需再次输入 Management Key。",
+      "session.retry": "重新读取会话",
+      "session.footnote": "插件只复用 CPAMC 已保存的同源会话，不会复制或持久化 Management Key。",
+      "session.noSessionTitle": "未找到可复用的 CPAMC 会话",
+      "session.noSessionMessage": "自动接入要求 CPAMC 与 CPA 同源，并在登录时启用“记住密码”。请确认后返回此页面重试；插件不会要求你再次输入 Management Key。",
+      "session.loadingMessage": "正在验证 CPAMC 已保存的连接信息并加载模型策略…",
+      "session.expired": "CPAMC 保存的 Management Key 已失效。请返回 CPAMC 重新登录并启用“记住密码”。",
+      "session.connectFailed": "无法连接 CPA：{message}",
+      "session.unavailableTitle": "管理会话不可用",
+      "session.endedTitle": "CPAMC 会话已结束",
+      "session.endedDraft": "未保存的策略草稿已保留在当前页面内存中。请重新登录；会话恢复后草稿会自动还原。",
+      "session.endedNoDraft": "请先在 CPAMC 重新登录并启用“记住密码”，页面会自动重新接入。",
+      "nav.label": "策略导航",
+      "nav.search": "搜索 Key",
+      "nav.overview": "概览",
+      "nav.noMatch": "没有匹配的 Key",
+      "nav.noKeys": "CPA 当前没有 API Key",
+      "list.separator": "，",
+      "health.connecting": "正在连接",
+      "health.warning": "策略警告",
+      "health.ok": "运行正常 · rev-{revision}",
+      "health.disconnected": "未连接",
+      "action.reload": "从策略文件重载",
+      "action.reloadUnavailable": "未配置 policy_file，无法从文件重载",
+      "action.refresh": "刷新 CPA Key 与策略",
+      "action.save": "保存",
+      "action.saving": "保存中",
+      "action.refreshData": "刷新数据",
+      "savebar.label": "未保存的修改",
+      "savebar.text": "有未保存的修改",
+      "persist.title": "策略自动保存到 {path}",
+      "persist.failed": "自动持久化失败：{error} 当前修改仅保存在内存中。",
+      "persist.memory": "内存模式：修改不会写入文件。",
+      "badge.default": "默认",
+      "badge.allowRules": "允许规则",
+      "badge.denyRules": "拒绝规则",
+      "overview.title": "概览",
+      "overview.subtitle": "为 CPA 现有 API Key 配置可访问的模型。Key 的创建与删除由 CPA 管理；未配置规则的 Key 默认允许全部模型。",
+      "overview.lastErrorTitle": "最近一次配置存在问题",
+      "overview.lastError": "{error}。当前仍在使用最后一个有效策略。",
+      "overview.staleTitle": "{count} 条失效策略",
+      "overview.staleBody": "这些 caller scope 不对应 CPA 当前 Key。保存时会原样保留，不会静默删除；确认旧 Key 已永久移除后，请通过策略文件处理。",
+      "overview.statsLabel": "权限统计",
+      "overview.configured": "已配置",
+      "overview.defaultAllow": "默认允许",
+      "overview.stale": "失效策略",
+      "overview.status": "运行状态",
+      "overview.authMode": "认证模式",
+      "overview.identitySource": "身份来源",
+      "overview.unconfiguredKeys": "未配置 Key",
+      "overview.allowAll": "允许全部模型",
+      "overview.policyCount": "后端策略数",
+      "overview.revision": "策略版本",
+      "overview.source": "策略来源",
+      "overview.updatedAt": "最后更新",
+      "overview.builtinAuth": "CPA 内置 API Keys",
+      "rules.allow": "允许",
+      "rules.deny": "拒绝",
+      "rules.defaultAllowAll": "默认允许全部模型",
+      "rules.configured": "已配置规则",
+      "rules.allowDescription": "设置后，仅允许这些模型",
+      "rules.denyDescription": "命中即拒绝，优先于允许规则",
+      "rules.count": "{count} 条规则",
+      "key.fingerprintTitle": "caller scope 指纹",
+      "key.privacy": "页面只显示 Key 的首尾片段用于辨认；完整 Key 仅在内存中短暂用于计算 caller scope 与读取模型目录，不会写入页面、浏览器存储或 URL。",
+      "picker.allModelsWildcard": "全部模型（*，包含未来新增）",
+      "picker.matched": "已匹配 {matched} / {total} 个模型",
+      "picker.chooseFrom": "从 {total} 个模型中选择",
+      "picker.keptRules": "已保留 {count} 条现有规则",
+      "picker.catalogUnavailable": "模型目录不可用",
+      "picker.wildcard": "通配符",
+      "picker.outsideCatalog": "目录外",
+      "picker.removeRule": "移除此模型规则",
+      "picker.noDenied": "未拒绝任何模型",
+      "picker.unrestricted": "未限制，允许全部模型",
+      "picker.allModels": "全部模型",
+      "picker.allDenyHint": "* · 此 Key 将无法访问任何模型",
+      "picker.allAllowHint": "* · 自动包含未来新增模型",
+      "picker.presetHint": "当前匹配 {count} 个模型，并覆盖未来同前缀模型",
+      "picker.matchedBy": "由 {rule} 通配符匹配",
+      "picker.searchPlaceholder": "搜索模型…",
+      "picker.searchLabel": "搜索{title}模型",
+      "picker.noMatch": "没有匹配的模型",
+      "picker.footerMatched": "已匹配 {matched} / {total}",
+      "picker.selectAll": "全选当前目录",
+      "picker.clear": "清空",
+      "picker.noCatalog": "没有可用模型目录。",
+      "picker.reload": "重新加载",
+      "picker.loading": "加载中",
+      "picker.loaded": "已加载 {count} 个模型",
+      "error.invalidDocument": "插件返回了无效的 v2 策略文档。",
+      "error.policyInvalid": "策略 {index} 格式无效。",
+      "error.policyScopeInvalid": "策略 {index} 的 caller scope 无效。",
+      "error.policyScopeDuplicate": "策略 {index} 的 caller scope 重复。",
+      "error.policyFieldInvalid": "策略 {index} 的 {field} 无效。",
+      "error.http": "请求失败（HTTP {status}）",
+      "error.readTimeout": "CPA 响应超时，请检查服务状态。",
+      "error.writeTimeout": "操作响应超时，提交结果尚未确认。",
+      "error.catalogNoKey": "CPA 当前没有可用于读取模型目录的 API Key。",
+      "error.catalogHttp": "模型目录请求失败（HTTP {status}）",
+      "error.catalogEmpty": "CPA 的 /v1/models 暂未返回可用模型。",
+      "error.catalogTimeout": "模型目录加载超时。",
+      "error.catalogFailed": "模型目录加载失败。",
+      "error.keysUnrecognized": "CPA 返回了无法识别的 API Key 列表。",
+      "error.persistTimeout": "CPA 已保存插件配置，但等待策略文件生效超时。",
+      "error.noPluginsDir": "CPA 未返回有效的 plugins_dir。",
+      "error.noPolicyFile": "插件未返回默认策略文件路径。",
+      "error.persistSetupFailed": "自动创建插件策略文件失败。",
+      "save.keySetChanged": "CPA API Key 列表已变化；为避免策略错配，保存已中止。请刷新数据后重新检查规则。",
+      "save.keysChangedAfter": "策略已保存，但 CPA Key 列表在保存期间发生变化；新 Key 当前默认允许全部模型，请立即检查。",
+      "save.verifyFailed": "策略已保存，但无法复核 CPA Key 列表：{message}",
+      "save.persisted": "策略已保存并持久化",
+      "save.memory": "策略已保存到内存",
+      "save.statusFailed": "策略已保存，但状态刷新失败：{message}",
+      "save.timeoutConfirmed": "保存响应超时，但已重新读取并确认提交成功",
+      "save.timeoutUnconfirmed": "保存结果无法确认；本地修改已保留，请刷新后核对。",
+      "save.conflict": "策略已被其他管理员或配置重载修改。请刷新数据后再保存。",
+      "refresh.confirm": "刷新会放弃尚未保存的模型规则。是否继续？",
+      "refresh.done": "已刷新 CPA Key 与策略",
+      "reload.confirm": "从策略文件重载会放弃尚未保存的模型规则。是否继续？",
+      "reload.done": "已从策略文件重载",
+      "reload.uiFailed": "策略已重载，但界面刷新失败：{message}"
+    },
+    en: {
+      "meta.description": "CPA Key Model Access settings",
+      "meta.title": "Model Access · CPA",
+      "brand.title": "Model Access",
+      "session.connectingTitle": "Connecting to management session",
+      "session.readingMessage": "Reading the current CPAMC connection. There is no need to enter the Management Key again.",
+      "session.retry": "Retry session",
+      "session.footnote": "The plugin only reuses the same-origin session saved by CPAMC and never copies or persists the Management Key.",
+      "session.noSessionTitle": "No reusable CPAMC session found",
+      "session.noSessionMessage": "Automatic sign-in requires CPAMC and CPA to share the same origin, with “Remember password” enabled at login. Check this and retry here; the plugin will never ask you to re-enter the Management Key.",
+      "session.loadingMessage": "Verifying the saved CPAMC connection and loading model policies…",
+      "session.expired": "The Management Key saved by CPAMC is no longer valid. Sign in to CPAMC again with “Remember password” enabled.",
+      "session.connectFailed": "Unable to connect to CPA: {message}",
+      "session.unavailableTitle": "Management session unavailable",
+      "session.endedTitle": "CPAMC session ended",
+      "session.endedDraft": "Your unsaved policy draft is kept in this page's memory. Sign in again and it will be restored automatically.",
+      "session.endedNoDraft": "Sign in to CPAMC again with “Remember password” enabled; this page will reconnect automatically.",
+      "nav.label": "Policy navigation",
+      "nav.search": "Search keys",
+      "nav.overview": "Overview",
+      "nav.noMatch": "No matching keys",
+      "nav.noKeys": "CPA has no API keys yet",
+      "list.separator": ", ",
+      "health.connecting": "Connecting",
+      "health.warning": "Policy warning",
+      "health.ok": "Healthy · rev-{revision}",
+      "health.disconnected": "Disconnected",
+      "action.reload": "Reload from policy file",
+      "action.reloadUnavailable": "policy_file is not configured; cannot reload from file",
+      "action.refresh": "Refresh CPA keys and policies",
+      "action.save": "Save",
+      "action.saving": "Saving",
+      "action.refreshData": "Refresh data",
+      "savebar.label": "Unsaved changes",
+      "savebar.text": "You have unsaved changes",
+      "persist.title": "Policies are saved automatically to {path}",
+      "persist.failed": "Automatic persistence failed: {error} Changes are kept in memory only.",
+      "persist.memory": "Memory mode: changes are not written to a file.",
+      "badge.default": "Default",
+      "badge.allowRules": "Allow rules",
+      "badge.denyRules": "Deny rules",
+      "overview.title": "Overview",
+      "overview.subtitle": "Configure which models each existing CPA API key can access. Keys are created and deleted in CPA; keys without rules can access all models by default.",
+      "overview.lastErrorTitle": "The latest configuration has a problem",
+      "overview.lastError": "{error}. The last valid policy is still in effect.",
+      "overview.staleTitle": ({ count }) => `${count} stale ${plural(count, "policy", "policies")}`,
+      "overview.staleBody": "These caller scopes don't match any current CPA key. They are kept as-is on save and never silently deleted; once you have confirmed the old keys are permanently removed, clean them up in the policy file.",
+      "overview.statsLabel": "Access statistics",
+      "overview.configured": "Configured",
+      "overview.defaultAllow": "Default allow",
+      "overview.stale": "Stale policies",
+      "overview.status": "Runtime status",
+      "overview.authMode": "Auth mode",
+      "overview.identitySource": "Identity source",
+      "overview.unconfiguredKeys": "Unconfigured keys",
+      "overview.allowAll": "Allow all models",
+      "overview.policyCount": "Backend policies",
+      "overview.revision": "Policy revision",
+      "overview.source": "Policy source",
+      "overview.updatedAt": "Last updated",
+      "overview.builtinAuth": "CPA built-in API keys",
+      "rules.allow": "Allow",
+      "rules.deny": "Deny",
+      "rules.defaultAllowAll": "All models allowed by default",
+      "rules.configured": "Rules configured",
+      "rules.allowDescription": "When set, only these models are allowed",
+      "rules.denyDescription": "Matching models are denied, overriding allow rules",
+      "rules.count": ({ count }) => `${count} ${plural(count, "rule", "rules")}`,
+      "key.fingerprintTitle": "caller scope fingerprint",
+      "key.privacy": "Only the first and last characters of each key are shown for identification. The full key is held in memory only briefly to compute the caller scope and read the model catalog, and is never written to the page, browser storage, or URLs.",
+      "picker.allModelsWildcard": "All models (*, including future ones)",
+      "picker.matched": ({ matched, total }) => `${matched} / ${total} ${plural(total, "model", "models")} matched`,
+      "picker.chooseFrom": ({ total }) => `Choose from ${total} ${plural(total, "model", "models")}`,
+      "picker.keptRules": ({ count }) => `${count} existing ${plural(count, "rule", "rules")} kept`,
+      "picker.catalogUnavailable": "Model catalog unavailable",
+      "picker.wildcard": "Wildcard",
+      "picker.outsideCatalog": "Not in catalog",
+      "picker.removeRule": "Remove this model rule",
+      "picker.noDenied": "No models denied",
+      "picker.unrestricted": "Unrestricted, all models allowed",
+      "picker.allModels": "All models",
+      "picker.allDenyHint": "* · This key will not be able to access any model",
+      "picker.allAllowHint": "* · Automatically includes future models",
+      "picker.presetHint": ({ count }) => `Matches ${count} ${plural(count, "model", "models")} now, plus future models with this prefix`,
+      "picker.matchedBy": "Matched by wildcard {rule}",
+      "picker.searchPlaceholder": "Search models…",
+      "picker.searchLabel": ({ title }) => `Search models to ${String(title).toLowerCase()}`,
+      "picker.noMatch": "No matching models",
+      "picker.footerMatched": "{matched} / {total} matched",
+      "picker.selectAll": "Select entire catalog",
+      "picker.clear": "Clear",
+      "picker.noCatalog": "No model catalog available.",
+      "picker.reload": "Reload",
+      "picker.loading": "Loading",
+      "picker.loaded": ({ count }) => `Loaded ${count} ${plural(count, "model", "models")}`,
+      "error.invalidDocument": "The plugin returned an invalid v2 policy document.",
+      "error.policyInvalid": "Policy {index} is malformed.",
+      "error.policyScopeInvalid": "Policy {index} has an invalid caller scope.",
+      "error.policyScopeDuplicate": "Policy {index} has a duplicate caller scope.",
+      "error.policyFieldInvalid": "Policy {index} has an invalid {field}.",
+      "error.http": "Request failed (HTTP {status})",
+      "error.readTimeout": "CPA did not respond in time. Please check the service status.",
+      "error.writeTimeout": "The operation timed out; its result has not been confirmed.",
+      "error.catalogNoKey": "CPA has no API Key available to read the model catalog.",
+      "error.catalogHttp": "Model catalog request failed (HTTP {status})",
+      "error.catalogEmpty": "CPA's /v1/models returned no available models.",
+      "error.catalogTimeout": "Loading the model catalog timed out.",
+      "error.catalogFailed": "Failed to load the model catalog.",
+      "error.keysUnrecognized": "CPA returned an unrecognized API Key list.",
+      "error.persistTimeout": "CPA saved the plugin config, but timed out waiting for the policy file to take effect.",
+      "error.noPluginsDir": "CPA did not return a valid plugins_dir.",
+      "error.noPolicyFile": "The plugin did not return a default policy file path.",
+      "error.persistSetupFailed": "Failed to create the plugin policy file automatically.",
+      "save.keySetChanged": "The CPA API Key list has changed; saving was aborted to avoid mismatched policies. Refresh the data and review the rules again.",
+      "save.keysChangedAfter": "Policies saved, but the CPA key list changed during the save; new keys currently allow all models. Review them now.",
+      "save.verifyFailed": "Policies saved, but the CPA key list could not be re-verified: {message}",
+      "save.persisted": "Policies saved and persisted",
+      "save.memory": "Policies saved to memory",
+      "save.statusFailed": "Policies saved, but refreshing the status failed: {message}",
+      "save.timeoutConfirmed": "The save timed out, but a re-read confirmed it succeeded",
+      "save.timeoutUnconfirmed": "The save result could not be confirmed; local changes are kept. Refresh and verify.",
+      "save.conflict": "Policies were changed by another administrator or a config reload. Refresh the data before saving.",
+      "refresh.confirm": "Refreshing discards unsaved model rules. Continue?",
+      "refresh.done": "CPA keys and policies refreshed",
+      "reload.confirm": "Reloading from the policy file discards unsaved model rules. Continue?",
+      "reload.done": "Reloaded from policy file",
+      "reload.uiFailed": "Policies reloaded, but refreshing the UI failed: {message}"
+    }
+  };
+
+  function normalizeLocale(value) {
+    const tag = String(value || "").trim().toLowerCase();
+    if (!tag) return "";
+    if (tag.startsWith("zh")) return "zh-CN";
+    if (tag.startsWith("en")) return "en";
+    return "";
+  }
+
+  // Follow the CPAMC UI language (embedding document, then its persisted store),
+  // then the browser preference. Anything unsupported falls back to English.
+  function detectLocale() {
+    try {
+      if (window.self !== window.top) {
+        const parentLocale = normalizeLocale(window.parent.document.documentElement.getAttribute("lang"));
+        if (parentLocale) return parentLocale;
+      }
+    } catch (_) { /* storage and browser preference remain the fallback */ }
+    const stored = readStoredValue(CPAMC_LANGUAGE_KEY);
+    const preferred = normalizeLocale(stored && typeof stored === "object" ? stored.state?.language ?? stored.language : stored)
+      || normalizeLocale(readStoredValue("i18nextLng"));
+    if (preferred) return preferred;
+    if (typeof navigator !== "undefined") {
+      for (const language of [...(navigator.languages || []), navigator.language]) {
+        const match = normalizeLocale(language);
+        if (match) return match;
+      }
+      return "en";
+    }
+    return "zh-CN";
+  }
+
+  let locale = detectLocale();
+
+  function t(key, params = {}) {
+    const entry = MESSAGES[locale]?.[key] ?? MESSAGES["zh-CN"][key];
+    if (entry === undefined) return key;
+    if (typeof entry === "function") return entry(params);
+    return entry.replace(/\{(\w+)\}/g, (match, name) => (name in params ? String(params[name]) : match));
+  }
+
+  function applyStaticTranslations() {
+    document.documentElement.lang = locale;
+    document.title = t("meta.title");
+    document.querySelector('meta[name="description"]')?.setAttribute("content", t("meta.description"));
+    document.querySelectorAll("[data-i18n]").forEach((element) => { element.textContent = t(element.dataset.i18n); });
+    for (const attribute of ["aria-label", "title", "placeholder"]) {
+      document.querySelectorAll(`[data-i18n-${attribute}]`).forEach((element) => {
+        element.setAttribute(attribute, t(element.getAttribute(`data-i18n-${attribute}`)));
+      });
+    }
+  }
+
   const state = {
+    sessionView: null,
     token: "",
     status: null,
     keys: [],
@@ -122,18 +437,18 @@
 
   function normalizePolicyDocument(raw) {
     if (!raw || typeof raw !== "object" || raw.version !== 2 || !Array.isArray(raw.policies)) {
-      throw new Error("插件返回了无效的 v2 策略文档。");
+      throw new Error(t("error.invalidDocument"));
     }
     const seen = new Set();
     const policies = raw.policies.map((item, index) => {
-      if (!item || typeof item !== "object") throw new Error(`策略 ${index + 1} 格式无效。`);
+      if (!item || typeof item !== "object") throw new Error(t("error.policyInvalid", { index: index + 1 }));
       const scope = typeof item.caller_scope === "string" ? item.caller_scope.trim().toLowerCase() : "";
-      if (!/^[0-9a-f]{64}$/.test(scope)) throw new Error(`策略 ${index + 1} 的 caller scope 无效。`);
-      if (seen.has(scope)) throw new Error(`策略 ${index + 1} 的 caller scope 重复。`);
+      if (!/^[0-9a-f]{64}$/.test(scope)) throw new Error(t("error.policyScopeInvalid", { index: index + 1 }));
+      if (seen.has(scope)) throw new Error(t("error.policyScopeDuplicate", { index: index + 1 }));
       seen.add(scope);
       for (const field of ["allow_models", "deny_models"]) {
         if (!Array.isArray(item[field]) || item[field].some((model) => typeof model !== "string" || !model.trim())) {
-          throw new Error(`策略 ${index + 1} 的 ${field} 无效。`);
+          throw new Error(t("error.policyFieldInvalid", { index: index + 1, field }));
         }
       }
       return {
@@ -175,14 +490,14 @@
       try { payload = await response.json(); } catch (_) { payload = null; }
       if (!response.ok) {
         const detail = payload && (payload.error?.message || payload.error);
-        const error = new Error(detail ? String(detail) : `请求失败（HTTP ${response.status}）`);
+        const error = new Error(detail ? String(detail) : t("error.http", { status: response.status }));
         error.status = response.status;
         throw error;
       }
       return payload;
     } catch (error) {
       if (error.name === "AbortError") {
-        const timeoutError = new Error(method === "GET" ? "CPA 响应超时，请检查服务状态。" : "操作响应超时，提交结果尚未确认。");
+        const timeoutError = new Error(t(method === "GET" ? "error.readTimeout" : "error.writeTimeout"));
         timeoutError.code = "timeout";
         throw timeoutError;
       }
@@ -258,7 +573,7 @@
   }
 
   async function fetchModelCatalog(apiKey) {
-    if (!apiKey) return { models: [], error: "CPA 当前没有可用于读取模型目录的 API Key。" };
+    if (!apiKey) return { models: [], error: t("error.catalogNoKey") };
     const controller = new AbortController();
     const timer = window.setTimeout(() => controller.abort(), 12000);
     try {
@@ -270,7 +585,7 @@
       });
       let payload = null;
       try { payload = await response.json(); } catch (_) { payload = null; }
-      if (!response.ok) throw new Error(`模型目录请求失败（HTTP ${response.status}）`);
+      if (!response.ok) throw new Error(t("error.catalogHttp", { status: response.status }));
       const source = Array.isArray(payload) ? payload : Array.isArray(payload?.data) ? payload.data : Array.isArray(payload?.models) ? payload.models : [];
       const seen = new Set();
       const models = source.map((item) => {
@@ -286,10 +601,10 @@
         seen.add(key);
         return true;
       }).sort((left, right) => left.id.localeCompare(right.id));
-      return { models, error: models.length ? "" : "CPA 的 /v1/models 暂未返回可用模型。" };
+      return { models, error: models.length ? "" : t("error.catalogEmpty") };
     } catch (error) {
-      const message = error.name === "AbortError" ? "模型目录加载超时。" : error.message;
-      return { models: [], error: message || "模型目录加载失败。" };
+      const message = error.name === "AbortError" ? t("error.catalogTimeout") : error.message;
+      return { models: [], error: message || t("error.catalogFailed") };
     } finally {
       window.clearTimeout(timer);
     }
@@ -311,7 +626,7 @@
     const payload = await api(PATHS.apiKeys, { method: "GET" });
     const rawKeys = payload?.["api-keys"];
     const values = rawKeys === null ? [] : Array.isArray(rawKeys) ? rawKeys : null;
-    if (!values) throw new Error("CPA 返回了无法识别的 API Key 列表。");
+    if (!values) throw new Error(t("error.keysUnrecognized"));
 
     const temporaryValues = values.slice();
     const normalizedValues = temporaryValues.map((value) => String(value).trim()).filter(Boolean);
@@ -352,7 +667,7 @@
         lastError = error;
       }
     }
-    throw lastError || new Error("CPA 已保存插件配置，但等待策略文件生效超时。");
+    throw lastError || new Error(t("error.persistTimeout"));
   }
 
   function pluginsDirFromList(pluginList) {
@@ -372,7 +687,7 @@
   async function initializeDefaultPersistence() {
     const pluginList = await api(PATHS.pluginList, { method: "GET" });
     const pluginsDir = pluginsDirFromList(pluginList);
-    if (!pluginsDir) throw new Error("CPA 未返回有效的 plugins_dir。");
+    if (!pluginsDir) throw new Error(t("error.noPluginsDir"));
     const initialized = await api(PATHS.initializeStorage, {
       method: "POST",
       body: JSON.stringify({ plugins_dir: pluginsDir })
@@ -380,7 +695,7 @@
     // Plugin RPC6 responses are raw on both legacy host2 and current host6.
     // Never entity-decode policy paths (or other plugin response fields).
     const policyFile = typeof initialized?.policy_file === "string" ? initialized.policy_file.trim() : "";
-    if (!policyFile) throw new Error("插件未返回默认策略文件路径。");
+    if (!policyFile) throw new Error(t("error.noPolicyFile"));
     await api(PATHS.pluginConfig, {
       method: "PATCH",
       body: JSON.stringify({ policy_file: policyFile })
@@ -396,7 +711,7 @@
       try {
         status = await initializeDefaultPersistence();
       } catch (error) {
-        persistenceSetupError = error.message || "自动创建插件策略文件失败。";
+        persistenceSetupError = error.message || t("error.persistSetupFailed");
       }
     }
     const [policies, keyData] = await Promise.all([
@@ -439,9 +754,10 @@
     state.selectedIndex = preferredScope ? state.keys.findIndex((key) => key.scope === preferredScope) : -1;
   }
 
-  function setSessionState(kind, title, message) {
-    $("#authTitle").textContent = title;
-    $("#authMessage").textContent = message;
+  function setSessionState(kind, titleKey, messageKey, params = {}) {
+    state.sessionView = { kind, titleKey, messageKey, params };
+    $("#authTitle").textContent = t(titleKey);
+    $("#authMessage").textContent = t(messageKey, params);
     $("#sessionIcon").classList.toggle("error", kind === "error");
     $("#sessionIcon").innerHTML = kind === "loading" ? icons.spinner : kind === "error" ? icons.warning : icons.check;
     $("#retrySessionButton").hidden = kind !== "error";
@@ -452,12 +768,12 @@
     const token = readCPAMCManagementKey();
     if (!token) {
       state.token = "";
-      setSessionState("error", "未找到可复用的 CPAMC 会话", "自动接入要求 CPAMC 与 CPA 同源，并在登录时启用“记住密码”。请确认后返回此页面重试；插件不会要求你再次输入 Management Key。");
+      setSessionState("error", "session.noSessionTitle", "session.noSessionMessage");
       return;
     }
     state.token = token;
     state.sessionBusy = true;
-    setSessionState("loading", "正在接入管理会话", "正在验证 CPAMC 已保存的连接信息并加载模型策略…");
+    setSessionState("loading", "session.connectingTitle", "session.loadingMessage");
     try {
       const remote = await fetchRemoteData();
       const pendingDraft = state.pendingDraft;
@@ -475,10 +791,8 @@
       renderAll();
     } catch (error) {
       state.token = "";
-      const message = error.status === 401
-        ? "CPAMC 保存的 Management Key 已失效。请返回 CPAMC 重新登录并启用“记住密码”。"
-        : `无法连接 CPA：${error.message}`;
-      setSessionState("error", "管理会话不可用", message);
+      if (error.status === 401) setSessionState("error", "session.unavailableTitle", "session.expired");
+      else setSessionState("error", "session.unavailableTitle", "session.connectFailed", { message: error.message });
     } finally {
       state.sessionBusy = false;
     }
@@ -500,9 +814,7 @@
     state.sessionEnded = false;
     app.hidden = true;
     authGate.hidden = false;
-    setSessionState("error", "CPAMC 会话已结束", hadDraft
-      ? "未保存的策略草稿已保留在当前页面内存中。请重新登录；会话恢复后草稿会自动还原。"
-      : "请先在 CPAMC 重新登录并启用“记住密码”，页面会自动重新接入。");
+    setSessionState("error", "session.endedTitle", hadDraft ? "session.endedDraft" : "session.endedNoDraft");
   }
 
   function setBusy(busy, action = "") {
@@ -511,7 +823,7 @@
     refreshDataButton.disabled = busy || state.modelBusy;
     saveButton.disabled = busy || state.modelBusy || !state.dirty;
     reloadButton.disabled = busy || state.modelBusy || !state.status?.persistent_updates;
-    saveButton.innerHTML = action === "save" && busy ? `${icons.spinner}<span>保存中</span>` : "保存";
+    saveButton.innerHTML = action === "save" && busy ? `${icons.spinner}<span>${escapeHTML(t("action.saving"))}</span>` : escapeHTML(t("action.save"));
     reloadButton.innerHTML = action === "reload" && busy ? icons.spinner : icons.file;
     refreshDataButton.innerHTML = action === "refresh" && busy ? icons.spinner : icons.refresh;
     if (!busy) finalizeEndedSession();
@@ -532,12 +844,12 @@
   function syncHeader() {
     const healthy = state.status && !state.status.last_error;
     const warning = state.status?.last_error;
-    healthBadge.innerHTML = `<span class="status-dot ${warning ? "warning" : healthy ? "" : "error"}"></span><span>${escapeHTML(warning ? "策略警告" : healthy ? `运行正常 · rev-${state.revision}` : "未连接")}</span>`;
+    healthBadge.innerHTML = `<span class="status-dot ${warning ? "warning" : healthy ? "" : "error"}"></span><span>${escapeHTML(warning ? t("health.warning") : healthy ? t("health.ok", { revision: state.revision }) : t("health.disconnected"))}</span>`;
     healthBadge.title = warning ? state.status.last_error : healthy ? `Schema v${state.status.schema_version || 2}` : "";
     saveButton.disabled = state.busy || state.modelBusy || !state.dirty;
     reloadButton.disabled = state.busy || state.modelBusy || !state.status?.persistent_updates;
-    reloadButton.title = state.status?.persistent_updates ? "从策略文件重载" : "未配置 policy_file，无法从文件重载";
-    if (!state.busy) saveButton.textContent = "保存";
+    reloadButton.title = t(state.status?.persistent_updates ? "action.reload" : "action.reloadUnavailable");
+    if (!state.busy) saveButton.textContent = t("action.save");
     saveBar.dataset.visible = String(state.dirty);
     document.documentElement.classList.toggle("has-changes", state.dirty);
   }
@@ -548,13 +860,13 @@
     if (state.status.persistent_updates) {
       notice.className = "persistence-notice";
       notice.innerHTML = `<span>${escapeHTML(state.status.policy_file)}</span>`;
-      notice.title = `策略自动保存到 ${state.status.policy_file}`;
+      notice.title = t("persist.title", { path: state.status.policy_file });
     } else {
       notice.className = "persistence-notice warning";
       notice.title = "";
       notice.textContent = state.persistenceSetupError
-        ? `自动持久化失败：${state.persistenceSetupError} 当前修改仅保存在内存中。`
-        : "内存模式：修改不会写入文件。";
+        ? t("persist.failed", { error: state.persistenceSetupError })
+        : t("persist.memory");
     }
   }
 
@@ -567,9 +879,9 @@
   }
 
   function ruleBadge(key) {
-    if (!hasRules(key)) return '<span class="rule-badge muted">默认</span>';
-    const allow = key.allow_models.length ? `<span class="rule-count allow" title="允许规则">${key.allow_models.length}</span>` : "";
-    const deny = key.deny_models.length ? `<span class="rule-count deny" title="拒绝规则">${key.deny_models.length}</span>` : "";
+    if (!hasRules(key)) return `<span class="rule-badge muted">${escapeHTML(t("badge.default"))}</span>`;
+    const allow = key.allow_models.length ? `<span class="rule-count allow" title="${escapeHTML(t("badge.allowRules"))}">${key.allow_models.length}</span>` : "";
+    const deny = key.deny_models.length ? `<span class="rule-count deny" title="${escapeHTML(t("badge.denyRules"))}">${key.deny_models.length}</span>` : "";
     return `<span class="rule-badge">${allow}${deny}</span>`;
   }
 
@@ -581,15 +893,15 @@
     nav.innerHTML = `
       <button class="nav-item" type="button" data-select="overview" aria-current="${state.selectedIndex < 0 ? "page" : "false"}">
         <span class="nav-icon">${icons.overview}</span>
-        <span class="nav-copy"><strong>概览</strong></span>
+        <span class="nav-copy"><strong>${escapeHTML(t("nav.overview"))}</strong></span>
       </button>
       <p class="nav-group-label"><span>API Keys</span><span id="policyCount">${state.keys.length}</span></p>
       ${visible.length ? visible.map(({ key, index }) => `
-        <button class="nav-item" type="button" data-select="key" data-index="${index}" aria-current="${state.selectedIndex === index ? "page" : "false"}" aria-label="${escapeHTML(keyLabel(index))}，${escapeHTML(key.mask)}" title="SHA-256 ${escapeHTML(key.fingerprint)}">
+        <button class="nav-item" type="button" data-select="key" data-index="${index}" aria-current="${state.selectedIndex === index ? "page" : "false"}" aria-label="${escapeHTML(keyLabel(index))}${escapeHTML(t("list.separator"))}${escapeHTML(key.mask)}" title="SHA-256 ${escapeHTML(key.fingerprint)}">
           <span class="nav-icon">${icons.key}</span>
           <span class="nav-copy"><strong>${escapeHTML(keyLabel(index))}</strong><span>${escapeHTML(key.mask)}</span></span>
           ${ruleBadge(key)}
-        </button>`).join("") : `<p class="empty-nav">${query ? "没有匹配的 Key" : "CPA 当前没有 API Key"}</p>`}
+        </button>`).join("") : `<p class="empty-nav">${escapeHTML(t(query ? "nav.noMatch" : "nav.noKeys"))}</p>`}
     `;
   }
 
@@ -611,46 +923,46 @@
     const defaults = state.keys.length - configured;
     const staleCount = state.stalePolicies.length;
     const statusWarning = state.status?.last_error
-      ? `<div class="notice">${icons.warning}<p><strong>最近一次配置存在问题</strong>${escapeHTML(state.status.last_error)}。当前仍在使用最后一个有效策略。</p></div>`
+      ? `<div class="notice">${icons.warning}<p><strong>${escapeHTML(t("overview.lastErrorTitle"))}</strong>${escapeHTML(t("overview.lastError", { error: state.status.last_error }))}</p></div>`
       : "";
     const staleWarning = staleCount
-      ? `<div class="notice">${icons.warning}<p><strong>${staleCount} 条失效策略</strong>这些 caller scope 不对应 CPA 当前 Key。保存时会原样保留，不会静默删除；确认旧 Key 已永久移除后，请通过策略文件处理。</p></div>`
+      ? `<div class="notice">${icons.warning}<p><strong>${escapeHTML(t("overview.staleTitle", { count: staleCount }))}</strong>${escapeHTML(t("overview.staleBody"))}</p></div>`
       : "";
     const keyRows = state.keys.map((key, index) => `
       <button class="key-row" type="button" data-select="key" data-index="${index}">
         <span class="key-row-name"><strong>${escapeHTML(keyLabel(index))}</strong><span class="mono">${escapeHTML(key.mask)}</span></span>
-        <span class="key-row-rules">${hasRules(key) ? `${rulesSummary(key.allow_models, "允许")}${rulesSummary(key.deny_models, "拒绝", true)}` : '<span class="muted">默认允许全部模型</span>'}</span>
+        <span class="key-row-rules">${hasRules(key) ? `${rulesSummary(key.allow_models, t("rules.allow"))}${rulesSummary(key.deny_models, t("rules.deny"), true)}` : `<span class="muted">${escapeHTML(t("rules.defaultAllowAll"))}</span>`}</span>
         <span class="key-row-chevron" aria-hidden="true">${icons.chevronRight}</span>
       </button>`).join("");
 
     editor.innerHTML = `
       <header class="editor-head">
-        <h1>概览</h1>
-        <p class="editor-subtitle">为 CPA 现有 API Key 配置可访问的模型。Key 的创建与删除由 CPA 管理；未配置规则的 Key 默认允许全部模型。</p>
+        <h1>${escapeHTML(t("overview.title"))}</h1>
+        <p class="editor-subtitle">${escapeHTML(t("overview.subtitle"))}</p>
       </header>
       ${statusWarning}
       ${staleWarning}
-      <section class="stats" aria-label="权限统计">
+      <section class="stats" aria-label="${escapeHTML(t("overview.statsLabel"))}">
         ${statCard("API Keys", state.keys.length)}
-        ${statCard("已配置", configured)}
-        ${statCard("默认允许", defaults)}
-        ${statCard("失效策略", staleCount, staleCount > 0)}
+        ${statCard(t("overview.configured"), configured)}
+        ${statCard(t("overview.defaultAllow"), defaults)}
+        ${statCard(t("overview.stale"), staleCount, staleCount > 0)}
       </section>
       <section class="section">
         <h2 class="section-title">API Keys</h2>
-        <div class="card key-list">${keyRows || '<p class="card-empty">CPA 当前没有 API Key</p>'}</div>
+        <div class="card key-list">${keyRows || `<p class="card-empty">${escapeHTML(t("nav.noKeys"))}</p>`}</div>
       </section>
       <section class="section">
-        <h2 class="section-title">运行状态</h2>
+        <h2 class="section-title">${escapeHTML(t("overview.status"))}</h2>
         <dl class="card status-grid">
-          ${statusRow("认证模式", displayAuthMode(state.status?.auth_mode))}
-          ${statusRow("身份来源", state.status?.identity_source || "—")}
-          ${statusRow("未配置 Key", state.status?.unconfigured_key_action === "allow" ? "允许全部模型" : state.status?.unconfigured_key_action || "—")}
-          ${statusRow("后端策略数", state.status?.policy_count ?? "—")}
-          ${statusRow("策略版本", `rev-${state.revision}`)}
-          ${statusRow("策略来源", state.status?.source || "—")}
+          ${statusRow(t("overview.authMode"), displayAuthMode(state.status?.auth_mode))}
+          ${statusRow(t("overview.identitySource"), state.status?.identity_source || "—")}
+          ${statusRow(t("overview.unconfiguredKeys"), state.status?.unconfigured_key_action === "allow" ? t("overview.allowAll") : state.status?.unconfigured_key_action || "—")}
+          ${statusRow(t("overview.policyCount"), state.status?.policy_count ?? "—")}
+          ${statusRow(t("overview.revision"), `rev-${state.revision}`)}
+          ${statusRow(t("overview.source"), state.status?.source || "—")}
           ${statusRow("Schema", `v${state.status?.schema_version || 2}`)}
-          ${statusRow("最后更新", formatDate(state.status?.updated_at))}
+          ${statusRow(t("overview.updatedAt"), formatDate(state.status?.updated_at))}
         </dl>
       </section>`;
   }
@@ -659,7 +971,7 @@
     if (!models.length) return "";
     const preview = models.slice(0, 2).join(", ");
     const more = models.length > 2 ? ` +${models.length - 2}` : "";
-    return `<span class="rules-summary ${deny ? "deny" : "allow"}"><span class="rules-label">${label}</span><span class="mono">${escapeHTML(preview)}${more}</span></span>`;
+    return `<span class="rules-summary ${deny ? "deny" : "allow"}"><span class="rules-label">${escapeHTML(label)}</span><span class="mono">${escapeHTML(preview)}${more}</span></span>`;
   }
 
   function statCard(label, value, warning = false) {
@@ -667,7 +979,7 @@
   }
 
   function displayAuthMode(value) {
-    return value === "cpa_builtin_api_keys" ? "CPA 内置 API Keys" : value || "—";
+    return value === "cpa_builtin_api_keys" ? t("overview.builtinAuth") : value || "—";
   }
 
   function statusRow(label, value) {
@@ -681,15 +993,15 @@
         <h1>${escapeHTML(keyLabel(index))}</h1>
         <p class="editor-subtitle key-summary">
           <span class="key-mask mono">${escapeHTML(key.mask)}</span>
-          <span class="key-fingerprint mono" title="caller scope 指纹">SHA-256 ${escapeHTML(key.fingerprint)}</span>
-          <span class="pill ${empty ? "" : "active"}">${empty ? "默认允许全部模型" : "已配置规则"}</span>
+          <span class="key-fingerprint mono" title="${escapeHTML(t("key.fingerprintTitle"))}">SHA-256 ${escapeHTML(key.fingerprint)}</span>
+          <span class="pill ${empty ? "" : "active"}">${escapeHTML(t(empty ? "rules.defaultAllowAll" : "rules.configured"))}</span>
         </p>
       </header>
       <section class="card rules-card">
-        ${modelPicker("allow_models", "允许", "设置后，仅允许这些模型", key.allow_models, false)}
-        ${modelPicker("deny_models", "拒绝", "命中即拒绝，优先于允许规则", key.deny_models, true)}
+        ${modelPicker("allow_models", t("rules.allow"), t("rules.allowDescription"), key.allow_models, false)}
+        ${modelPicker("deny_models", t("rules.deny"), t("rules.denyDescription"), key.deny_models, true)}
       </section>
-      <p class="privacy-note">页面只显示 Key 的首尾片段用于辨认；完整 Key 仅在内存中短暂用于计算 caller scope 与读取模型目录，不会写入页面、浏览器存储或 URL。</p>`;
+      <p class="privacy-note">${escapeHTML(t("key.privacy"))}</p>`;
     editor.dataset.keyIndex = String(index);
   }
 
@@ -701,21 +1013,22 @@
     const effectiveCatalogCount = state.models.filter((model) => selected.has(model.id) || matchedRuleFor(model.id)).length;
     const isOpen = state.openPicker === kind;
     const summary = wildcardSelected
-      ? "全部模型（*，包含未来新增）"
+      ? t("picker.allModelsWildcard")
       : state.models.length
-        ? effectiveCatalogCount ? `已匹配 ${effectiveCatalogCount} / ${state.models.length} 个模型` : `从 ${state.models.length} 个模型中选择`
-        : selectedModels.length ? `已保留 ${selectedModels.length} 条现有规则` : "模型目录不可用";
+        ? effectiveCatalogCount ? t("picker.matched", { matched: effectiveCatalogCount, total: state.models.length }) : t("picker.chooseFrom", { total: state.models.length })
+        : selectedModels.length ? t("picker.keptRules", { count: selectedModels.length }) : t("picker.catalogUnavailable");
+    const wildcardLabel = escapeHTML(t("picker.wildcard"));
     const chips = selectedModels.length
       ? selectedModels.map((model) => {
           const wildcard = model.includes("*") || model.includes("?");
           const outsideCatalog = !wildcard && !state.models.some((candidate) => candidate.id === model);
-          return `<span class="chip ${deny ? "deny" : ""}"><span>${escapeHTML(model)}</span>${wildcard ? '<small>通配符</small>' : outsideCatalog ? '<small>目录外</small>' : ""}<button class="chip-remove" type="button" data-action="remove-model" data-kind="${kind}" data-model="${escapeHTML(model)}" aria-label="移除此模型规则">${icons.close}</button></span>`;
+          return `<span class="chip ${deny ? "deny" : ""}"><span>${escapeHTML(model)}</span>${wildcard ? `<small>${wildcardLabel}</small>` : outsideCatalog ? `<small>${escapeHTML(t("picker.outsideCatalog"))}</small>` : ""}<button class="chip-remove" type="button" data-action="remove-model" data-kind="${kind}" data-model="${escapeHTML(model)}" aria-label="${escapeHTML(t("picker.removeRule"))}">${icons.close}</button></span>`;
         }).join("")
-      : `<span class="empty-chips">${deny ? "未拒绝任何模型" : "未限制，允许全部模型"}</span>`;
+      : `<span class="empty-chips">${escapeHTML(t(deny ? "picker.noDenied" : "picker.unrestricted"))}</span>`;
     const wildcardRow = `<button class="model-option wildcard-option ${wildcardSelected ? "selected" : ""}" type="button" role="option" aria-selected="${wildcardSelected}" data-action="toggle-model" data-kind="${kind}" data-model="*" data-search="全部模型 all models wildcard *">
       <span class="model-checkbox" aria-hidden="true">${wildcardSelected ? icons.check : ""}</span>
-      <span class="model-option-copy"><strong>全部模型</strong><small>${deny ? "* · 此 Key 将无法访问任何模型" : "* · 自动包含未来新增模型"}</small></span>
-      <span class="model-badge">通配符</span>
+      <span class="model-option-copy"><strong>${escapeHTML(t("picker.allModels"))}</strong><small>${escapeHTML(t(deny ? "picker.allDenyHint" : "picker.allAllowHint"))}</small></span>
+      <span class="model-badge">${wildcardLabel}</span>
     </button>`;
     const commonWildcards = ["gpt-*", "claude-*", "gemini-*", "qwen-*", "deepseek-*", "grok-*", "kimi-*", "glm-*", "minimax-*"];
     const presetRows = commonWildcards.filter((rule) => selected.has(rule) || state.models.some((model) => modelPatternMatches(rule, model.id))).map((rule) => {
@@ -725,8 +1038,8 @@
       const matchCount = state.models.filter((model) => modelPatternMatches(rule, model.id)).length;
       return `<button class="model-option preset-option ${checked ? "selected" : ""} ${derived ? "derived" : ""}" type="button" role="option" aria-selected="${checked}" aria-disabled="${derived}" data-action="toggle-model" data-kind="${kind}" data-model="${rule}" data-locked="${derived}" data-search="${rule} 通配符 wildcard">
         <span class="model-checkbox" aria-hidden="true">${checked ? icons.check : ""}</span>
-        <span class="model-option-copy"><strong>${rule}</strong><small>当前匹配 ${matchCount} 个模型，并覆盖未来同前缀模型</small></span>
-        <span class="model-badge">通配符</span>
+        <span class="model-option-copy"><strong>${rule}</strong><small>${escapeHTML(t("picker.presetHint", { count: matchCount }))}</small></span>
+        <span class="model-badge">${wildcardLabel}</span>
       </button>`;
     }).join("");
     const rows = state.models.map((model) => {
@@ -736,23 +1049,23 @@
       const checked = explicit || derived;
       return `<button class="model-option ${checked ? "selected" : ""} ${derived ? "derived" : ""}" type="button" role="option" aria-selected="${checked}" aria-disabled="${derived}" data-action="toggle-model" data-kind="${kind}" data-model="${escapeHTML(model.id)}" data-locked="${derived}" data-search="${escapeHTML(`${model.id} ${model.displayName}`.toLowerCase())}">
         <span class="model-checkbox" aria-hidden="true">${checked ? icons.check : ""}</span>
-        <span class="model-option-copy"><strong>${escapeHTML(model.id)}</strong>${model.displayName ? `<small>${escapeHTML(model.displayName)}</small>` : ""}${derived ? `<small>由 ${escapeHTML(matchedRule)} 通配符匹配</small>` : ""}</span>
-        ${derived ? '<span class="model-badge">通配符</span>' : ""}
+        <span class="model-option-copy"><strong>${escapeHTML(model.id)}</strong>${model.displayName ? `<small>${escapeHTML(model.displayName)}</small>` : ""}${derived ? `<small>${escapeHTML(t("picker.matchedBy", { rule: matchedRule }))}</small>` : ""}</span>
+        ${derived ? `<span class="model-badge">${wildcardLabel}</span>` : ""}
       </button>`;
     }).join("");
 
     return `<div class="model-editor ${deny ? "deny" : ""}">
-      <div class="tag-head"><div><strong><span class="kind-dot" aria-hidden="true"></span>${escapeHTML(title)}</strong><span>${escapeHTML(description)}</span></div><span class="selection-count">${selectedModels.length} 条规则</span></div>
+      <div class="tag-head"><div><strong><span class="kind-dot" aria-hidden="true"></span>${escapeHTML(title)}</strong><span>${escapeHTML(description)}</span></div><span class="selection-count">${escapeHTML(t("rules.count", { count: selectedModels.length }))}</span></div>
       <div class="chips">${chips}</div>
       <button class="model-trigger ${isOpen ? "open" : ""}" type="button" data-action="toggle-picker" data-kind="${kind}" aria-expanded="${isOpen}">
         <span>${escapeHTML(summary)}</span><span class="picker-chevron" aria-hidden="true">${icons.chevronDown}</span>
-        ${state.models.length ? `<progress class="selection-meter" max="${state.models.length}" value="${effectiveCatalogCount}" aria-label="已匹配 ${effectiveCatalogCount} / ${state.models.length} 个模型"></progress>` : ""}
+        ${state.models.length ? `<progress class="selection-meter" max="${state.models.length}" value="${effectiveCatalogCount}" aria-label="${escapeHTML(t("picker.matched", { matched: effectiveCatalogCount, total: state.models.length }))}"></progress>` : ""}
       </button>
       ${isOpen ? `<div class="model-panel ${state.pickerAnimate === kind ? "animate-in" : ""}">
-        ${state.models.length ? `<div class="model-search"><span>${icons.search}</span><input type="search" data-model-search="${kind}" value="${escapeHTML(state.pickerQuery)}" autocomplete="off" placeholder="搜索模型…" aria-label="搜索${escapeHTML(title)}"></div>
-        <div class="model-list" role="listbox" aria-multiselectable="true">${wildcardRow}${presetRows}${rows}<p class="model-empty" hidden>没有匹配的模型</p></div>
-        <div class="model-panel-footer"><span>已匹配 ${effectiveCatalogCount} / ${state.models.length}</span><div><button type="button" data-action="select-all-models" data-kind="${kind}">全选当前目录</button><button type="button" data-action="clear-models" data-kind="${kind}">清空</button></div></div>`
-        : `<div class="model-list compact" role="listbox" aria-multiselectable="true">${wildcardRow}</div><div class="catalog-notice"><span>${escapeHTML(state.modelsError || "没有可用模型目录。")}</span><button type="button" data-action="refresh-models">重新加载</button></div>`}
+        ${state.models.length ? `<div class="model-search"><span>${icons.search}</span><input type="search" data-model-search="${kind}" value="${escapeHTML(state.pickerQuery)}" autocomplete="off" placeholder="${escapeHTML(t("picker.searchPlaceholder"))}" aria-label="${escapeHTML(t("picker.searchLabel", { title }))}"></div>
+        <div class="model-list" role="listbox" aria-multiselectable="true">${wildcardRow}${presetRows}${rows}<p class="model-empty" hidden>${escapeHTML(t("picker.noMatch"))}</p></div>
+        <div class="model-panel-footer"><span>${escapeHTML(t("picker.footerMatched", { matched: effectiveCatalogCount, total: state.models.length }))}</span><div><button type="button" data-action="select-all-models" data-kind="${kind}">${escapeHTML(t("picker.selectAll"))}</button><button type="button" data-action="clear-models" data-kind="${kind}">${escapeHTML(t("picker.clear"))}</button></div></div>`
+        : `<div class="model-list compact" role="listbox" aria-multiselectable="true">${wildcardRow}</div><div class="catalog-notice"><span>${escapeHTML(state.modelsError || t("picker.noCatalog"))}</span><button type="button" data-action="refresh-models">${escapeHTML(t("picker.reload"))}</button></div>`}
       </div>` : ""}
     </div>`;
   }
@@ -761,7 +1074,7 @@
     if (!value) return "—";
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return value;
-    return new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium", timeStyle: "short" }).format(date);
+    return new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(date);
   }
 
   function selectedKey() {
@@ -824,13 +1137,13 @@
     if (state.busy || state.modelBusy) return;
     setModelBusy(true);
     const retryButton = editor.querySelector('[data-action="refresh-models"]');
-    if (retryButton) { retryButton.disabled = true; retryButton.innerHTML = `${icons.spinner}<span>加载中</span>`; }
+    if (retryButton) { retryButton.disabled = true; retryButton.innerHTML = `${icons.spinner}<span>${escapeHTML(t("picker.loading"))}</span>`; }
     try {
       const result = await fetchCurrentKeys({ includeCatalog: true });
       state.models = result.catalog?.models || [];
       state.modelsError = result.catalog?.error || "";
       renderEditor();
-      showToast(state.models.length ? `已加载 ${state.models.length} 个模型` : state.modelsError, state.models.length ? "success" : "error");
+      showToast(state.models.length ? t("picker.loaded", { count: state.models.length }) : state.modelsError, state.models.length ? "success" : "error");
     } finally {
       setModelBusy(false);
       syncHeader();
@@ -869,7 +1182,7 @@
     try {
       const latestKeys = await fetchCurrentKeys();
       if (!setsEqual(scopeSet(state.keys), scopeSet(latestKeys))) {
-        const changed = new Error("CPA API Key 列表已变化；为避免策略错配，保存已中止。请刷新数据后重新检查规则。");
+        const changed = new Error(t("save.keySetChanged"));
         changed.code = "key_set_changed";
         throw changed;
       }
@@ -893,27 +1206,27 @@
       state.dirty = false;
       renderAll();
       if (keySetChangedAfterSave) {
-        showToast("策略已保存，但 CPA Key 列表在保存期间发生变化；新 Key 当前默认允许全部模型，请立即检查。", "error");
+        showToast(t("save.keysChangedAfter"), "error");
       } else if (postSaveCheckError) {
-        showToast(`策略已保存，但无法复核 CPA Key 列表：${postSaveCheckError.message}`, "error");
+        showToast(t("save.verifyFailed", { message: postSaveCheckError.message }), "error");
       } else {
-        showToast(response?.persistent ? "策略已保存并持久化" : "策略已保存到内存", "success");
+        showToast(t(response?.persistent ? "save.persisted" : "save.memory"), "success");
       }
       try {
         state.status = await api(PATHS.status, { method: "GET" });
         syncHeader();
         syncPersistence();
       } catch (refreshError) {
-        showToast(`策略已保存，但状态刷新失败：${refreshError.message}`, "error");
+        showToast(t("save.statusFailed", { message: refreshError.message }), "error");
       }
     } catch (error) {
       if (error.code === "timeout") {
         const confirmed = await confirmTimedOutSave(submittedPolicy, expectedRevision);
-        showToast(confirmed ? "保存响应超时，但已重新读取并确认提交成功" : "保存结果无法确认；本地修改已保留，请刷新后核对。", confirmed ? "success" : "error");
+        showToast(t(confirmed ? "save.timeoutConfirmed" : "save.timeoutUnconfirmed"), confirmed ? "success" : "error");
       } else if (error.code === "key_set_changed") {
-        showToast(error.message, "error", "刷新数据", refreshData);
+        showToast(error.message, "error", t("action.refreshData"), refreshData);
       } else if (error.status === 412) {
-        showToast("策略已被其他管理员或配置重载修改。请刷新数据后再保存。", "error", "刷新数据", refreshData);
+        showToast(t("save.conflict"), "error", t("action.refreshData"), refreshData);
       } else {
         showToast(error.message, "error");
       }
@@ -950,14 +1263,14 @@
 
   async function refreshData() {
     if (state.busy) return;
-    if (state.dirty && !window.confirm("刷新会放弃尚未保存的模型规则。是否继续？")) return;
+    if (state.dirty && !window.confirm(t("refresh.confirm"))) return;
     const preferredScope = selectedKey()?.scope || "";
     setBusy(true, "refresh");
     try {
       const remote = await fetchRemoteData();
       installRemoteData(remote, preferredScope);
       renderAll();
-      showToast("已刷新 CPA Key 与策略", "success");
+      showToast(t("refresh.done"), "success");
     } catch (error) {
       showToast(error.message, "error");
     } finally {
@@ -968,7 +1281,7 @@
 
   async function reload() {
     if (state.busy || !state.status?.persistent_updates) return;
-    if (state.dirty && !window.confirm("从策略文件重载会放弃尚未保存的模型规则。是否继续？")) return;
+    if (state.dirty && !window.confirm(t("reload.confirm"))) return;
     const preferredScope = selectedKey()?.scope || "";
     setBusy(true, "reload");
     let reloaded = false;
@@ -978,9 +1291,9 @@
       const remote = await fetchRemoteData();
       installRemoteData(remote, preferredScope);
       renderAll();
-      showToast("已从策略文件重载", "success");
+      showToast(t("reload.done"), "success");
     } catch (error) {
-      showToast(reloaded ? `策略已重载，但界面刷新失败：${error.message}` : error.message, "error");
+      showToast(reloaded ? t("reload.uiFailed", { message: error.message }) : error.message, "error");
     } finally {
       setBusy(false);
       syncHeader();
@@ -1025,7 +1338,22 @@
     else document.documentElement.dataset.theme = theme;
   }
 
+  function syncLocale() {
+    const next = detectLocale();
+    if (next === locale) return;
+    locale = next;
+    applyStaticTranslations();
+    if (state.sessionView) {
+      const { kind, titleKey, messageKey, params } = state.sessionView;
+      setSessionState(kind, titleKey, messageKey, params);
+    }
+    if (!app.hidden) renderAll();
+    if (!state.busy) setBusy(false);
+    if (state.openPicker) restorePickerView(state.openPicker);
+  }
+
   function initializeChrome() {
+    applyStaticTranslations();
     document.documentElement.classList.toggle("is-embedded", window.self !== window.top);
     $("#searchIcon").innerHTML = icons.search;
     refreshDataButton.innerHTML = icons.refresh;
@@ -1036,6 +1364,7 @@
     try {
       if (window.self !== window.top) {
         new MutationObserver(syncTheme).observe(window.parent.document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+        new MutationObserver(syncLocale).observe(window.parent.document.documentElement, { attributes: true, attributeFilter: ["lang"] });
       }
     } catch (_) { /* cross-origin embedding is unsupported for session reuse */ }
   }
@@ -1043,6 +1372,7 @@
   $("#retrySessionButton").addEventListener("click", connectFromCPAMC);
   window.addEventListener("storage", (event) => {
     if (event.key === CPAMC_THEME_KEY) syncTheme();
+    if (event.key === CPAMC_LANGUAGE_KEY || event.key === "i18nextLng") syncLocale();
     if (event.key !== CPAMC_AUTH_KEY && event.key !== "isLoggedIn") return;
     if (app.hidden) {
       connectFromCPAMC();

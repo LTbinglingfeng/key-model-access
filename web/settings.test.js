@@ -9,15 +9,16 @@ const { createHash } = require('node:crypto');
 const source = readFileSync(join(__dirname, 'settings.js'), 'utf8');
 const marker = '  $("#retrySessionButton").addEventListener';
 assert.equal(source.split(marker).length, 2);
-function load(respond = () => { throw new Error('Unexpected fetch'); }) {
+function load(respond = () => { throw new Error('Unexpected fetch'); }, globals = {}) {
   const context = vm.createContext({
     document: { querySelector: () => null },
     window: { setTimeout, clearTimeout },
+    ...globals,
     AbortController, TextEncoder,
     fetch: async (path, options) => ({ ok: true, json: async () => respond(path, options) })
   });
   vm.runInContext(source.slice(0, source.indexOf(marker)) +
-    'globalThis.helpers = { pluginsDirFromList, initializeDefaultPersistence, fetchCurrentKeys, api, normalizePolicyDocument }; })();', context);
+    'globalThis.helpers = { pluginsDirFromList, initializeDefaultPersistence, fetchCurrentKeys, api, normalizePolicyDocument, MESSAGES, t, getLocale: () => locale }; })();', context);
   return context.helpers;
 }
 
@@ -100,4 +101,33 @@ test('API keys expose only a masked head/tail fragment, never the full secret', 
     assert.ok(!JSON.stringify(keys[index]).includes(raw), 'full key must not survive in key metadata');
     assert.ok(keys[index].mask.replaceAll('•', '').length <= Math.ceil(raw.length / 2));
   }
+});
+
+test('i18n: zh-CN and en expose the same message keys and placeholders', () => {
+  const { MESSAGES } = load();
+  const zh = Object.keys(MESSAGES['zh-CN']).sort();
+  assert.deepEqual(Object.keys(MESSAGES.en).sort(), zh);
+  const html = readFileSync(join(__dirname, 'settings.html'), 'utf8');
+  for (const [, key] of html.matchAll(/data-i18n(?:-[a-z-]+)?="([^"]+)"/g)) assert.ok(zh.includes(key), key);
+  for (const key of zh) {
+    const zhEntry = MESSAGES['zh-CN'][key];
+    const enEntry = MESSAGES.en[key];
+    if (typeof zhEntry !== 'string' || typeof enEntry !== 'string') continue;
+    const names = (text) => [...text.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort();
+    assert.deepEqual(names(enEntry), names(zhEntry), key);
+  }
+});
+
+test('i18n: follows CPAMC language, then browser, defaulting to English', () => {
+  const storage = (value) => ({ getItem: (name) => (name === 'cli-proxy-language' ? value : null) });
+  const nav = (languages) => ({ languages, language: languages[0] });
+  const en = load(undefined, { localStorage: storage(JSON.stringify({ state: { language: 'en' } })), navigator: nav(['zh-CN']) });
+  assert.equal(en.getLocale(), 'en');
+  assert.equal(en.t('rules.count', { count: 1 }), '1 rule');
+  assert.equal(en.t('rules.count', { count: 3 }), '3 rules');
+  assert.equal(en.t('error.http', { status: 500 }), 'Request failed (HTTP 500)');
+  const zh = load(undefined, { localStorage: storage(null), navigator: nav(['zh-TW', 'en']) });
+  assert.equal(zh.getLocale(), 'zh-CN');
+  assert.equal(zh.t('rules.count', { count: 3 }), '3 条规则');
+  assert.equal(load(undefined, { localStorage: storage(null), navigator: nav(['fr-FR']) }).getLocale(), 'en');
 });
