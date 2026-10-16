@@ -199,21 +199,54 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y clang lld wget
+          sudo apt-get install -y clang lld curl xz-utils
+
+      # go-cross/cgo-actions hardcodes FreeBSD 14.3-RELEASE, which has been moved
+      # off download.freebsd.org. Fetch the sysroot ourselves so the version is
+      # configurable and falls back to the archive mirror once it ages out.
+      - name: Fetch FreeBSD sysroot
+        env:
+          FREEBSD_VERSION: '14.4'
+        run: |
+          set -euo pipefail
+          rel="${FREEBSD_VERSION}-RELEASE"
+          sysroot="${RUNNER_TEMP}/freebsd-sysroot"
+          mkdir -p "${sysroot}"
+          downloaded=false
+          for url in \
+            "https://download.freebsd.org/releases/amd64/${rel}/base.txz" \
+            "https://archive.freebsd.org/old-releases/amd64/${rel}/base.txz"; do
+            if curl -fsSL --retry 3 --connect-timeout 30 --max-time 600 \
+              -o "${RUNNER_TEMP}/base.txz" "${url}"; then
+              echo "downloaded ${url}"
+              downloaded=true
+              break
+            fi
+          done
+          if [[ "${downloaded}" != true ]]; then
+            rm -f "${RUNNER_TEMP}/base.txz"
+            echo "::error::Unable to download FreeBSD ${rel} sysroot from either mirror"
+            exit 1
+          fi
+          tar -xf "${RUNNER_TEMP}/base.txz" -C "${sysroot}" ./usr/include ./usr/lib ./lib
+          rm -f "${RUNNER_TEMP}/base.txz"
+          echo "FREEBSD_SYSROOT=${sysroot}" >> "${GITHUB_ENV}"
+          echo "FREEBSD_TARGET=x86_64-unknown-freebsd${FREEBSD_VERSION}" >> "${GITHUB_ENV}"
 
       - name: Build FreeBSD shared library
         timeout-minutes: 45
-        uses: go-cross/cgo-actions@v1
         env:
-          GOFLAGS: -trimpath -buildmode=c-shared
-        with:
-          dir: .
-          packages: .
-          targets: freebsd-amd64
-          out-dir: dist/freebsd-amd64
-          output: ${{ env.PLUGIN_NAME }}.so
-          flags: -ldflags=-s -w
-          x-flags: main.pluginVersion=${{ steps.release_metadata.outputs.version }}
+          CGO_ENABLED: '1'
+          GOOS: freebsd
+          GOARCH: amd64
+          CGO_LDFLAGS: -fuse-ld=lld
+        run: |
+          set -euo pipefail
+          export CC="clang --target=${FREEBSD_TARGET} --sysroot=${FREEBSD_SYSROOT}"
+          mkdir -p dist/freebsd-amd64
+          go build -trimpath -buildmode=c-shared \
+            -ldflags "-s -w -X main.pluginVersion=${VERSION}" \
+            -o "dist/freebsd-amd64/${PLUGIN_NAME}.so" .
 
       - name: Package plugin
         run: |
