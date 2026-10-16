@@ -66,7 +66,7 @@ make install CPA_DIR=/path/to/CLIProxyAPI
 
 ```bash
 make build GOOS=darwin GOARCH=arm64 BUILD_DIR=/path/to/plugins/darwin/arm64
-make package VERSION=0.1.3
+make package VERSION=0.2.0
 ```
 
 ### 2. 配置 CPA Key 与空的 v2 策略
@@ -387,14 +387,14 @@ checksums.txt
 本地生成当前平台压缩包和聚合校验文件：
 
 ```bash
-make checksums VERSION=0.1.3
+make checksums VERSION=0.2.0
 ```
 
-维护者创建 0.1.3 发布标签的示例：
+维护者创建 0.2.0 发布标签的示例：
 
 ```bash
-git tag -a v0.1.3 -m "Release v0.1.3"
-git push origin v0.1.3
+git tag -a v0.2.0 -m "Release v0.2.0"
+git push origin v0.2.0
 ```
 
 ## 官方资料
