@@ -15,7 +15,12 @@
       <h1 id="authTitle" data-i18n="session.connectingTitle">正在接入管理会话</h1>
       <p id="authMessage" class="auth-copy" role="status" aria-live="polite" data-i18n="session.readingMessage">正在读取 CPAMC 当前连接信息，无需再次输入 Management Key。</p>
       <button id="retrySessionButton" class="button secondary wide" type="button" data-i18n="session.retry" hidden>重新读取会话</button>
-      <p class="auth-footnote" data-i18n="session.footnote">插件只复用 CPAMC 已保存的同源会话，不会复制或持久化 Management Key。</p>
+      <form id="authForm" hidden>
+        <label for="managementKey" data-i18n="session.manualLabel">Management Key</label>
+        <input id="managementKey" type="password" autocomplete="off" spellcheck="false" required aria-label="Management Key">
+        <button class="button primary wide" type="submit" data-i18n="session.manualConnect">使用密钥连接</button>
+      </form>
+      <p class="auth-footnote" data-i18n="session.footnote">Management Key 仅用于当前页面连接，不会由插件写入浏览器存储。</p>
     </section>
   </main>
 

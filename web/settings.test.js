@@ -14,13 +14,99 @@ function load(respond = () => { throw new Error('Unexpected fetch'); }, globals 
     document: { querySelector: () => null },
     window: { setTimeout, clearTimeout },
     ...globals,
-    AbortController, TextEncoder,
-    fetch: async (path, options) => ({ ok: true, json: async () => respond(path, options) })
+    AbortController, TextEncoder, TextDecoder, atob,
+    fetch: async (path, options) => {
+      const payload = await respond(path, options);
+      return { ok: true, json: async () => payload };
+    }
   });
   vm.runInContext(source.slice(0, source.indexOf(marker)) +
-    'globalThis.helpers = { pluginsDirFromList, initializeDefaultPersistence, fetchCurrentKeys, api, normalizePolicyDocument, MESSAGES, t, getLocale: () => locale }; })();', context);
+    'globalThis.helpers = { pluginsDirFromList, initializeDefaultPersistence, fetchCurrentKeys, api, normalizePolicyDocument, readCPAMCManagementKey, readStoredValue, connectManually, connectFromCPAMC, state, MESSAGES, t, getLocale: () => locale }; })();', context);
   return context.helpers;
 }
+
+// Independent fixture encoder matching CPAMC src/utils/encryption.ts.
+function storedFixture(value, version = 2, host = 'localhost:8317', ua = 'old-browser') {
+  const bytes = Buffer.from(JSON.stringify(value));
+  const key = Buffer.from(`cli-proxy-api-webui::secure-storage|${host}${version === 1 ? `|${ua}` : ''}`);
+  return `enc::v${version}::` + Buffer.from(bytes.map((byte, index) => byte ^ key[index % key.length])).toString('base64');
+}
+
+function sessionHelpers(auth, loggedIn = 'true', extra = {}, ua = 'new-browser') {
+  const values = { 'cli-proxy-auth': auth, isLoggedIn: loggedIn, ...extra };
+  return load(undefined, {
+    window: { location: { host: 'localhost:8317' } },
+    navigator: { userAgent: ua, languages: ['en'] },
+    // Deliberately read-only: any attempted write fails the test.
+    localStorage: { getItem: name => values[name] ?? null }
+  });
+}
+
+test('manual fallback: missing session shows form; submit clears key and verifies with CPA', async () => {
+  const elements = new Map();
+  const element = selector => {
+    if (!elements.has(selector)) elements.set(selector, {
+      hidden: false, value: '', classList: { toggle() {} }, focus() { this.focused = true; }
+    });
+    return elements.get(selector);
+  };
+  let calls = 0;
+  const helpers = load((_path, options) => {
+    calls++;
+    assert.equal(options.headers.Authorization, 'Bearer manual-test-key');
+    assert.equal(element('#managementKey').value, '');
+    const error = new Error('Unauthorized');
+    error.status = 401;
+    throw error;
+  }, {
+    document: { querySelector: element },
+    localStorage: { getItem: () => null }
+  });
+  await helpers.connectFromCPAMC();
+  assert.equal(element('#authForm').hidden, false);
+  const event = { preventDefault() {} };
+  element('#managementKey').value = '  ';
+  await helpers.connectManually(event);
+  assert.equal(calls, 0);
+  assert.equal(element('#managementKey').focused, true);
+  element('#managementKey').value = ' manual-test-key ';
+  await helpers.connectManually(event);
+  assert.equal(calls, 1);
+  assert.equal(helpers.state.sessionSource, 'manual');
+  assert.equal(helpers.state.token, '');
+  assert.equal(helpers.state.sessionBusy, false);
+  assert.equal(element('#authForm').hidden, false);
+  assert.equal(helpers.state.sessionView.messageKey, 'session.expired');
+});
+
+test('CPAMC v2 session: reads Unicode keys independently of user agent', () => {
+  const raw = storedFixture({ state: { managementKey: '  test-密钥-&<>  ', rememberPassword: true }, version: 0 });
+  for (const ua of ['old-browser', 'new-browser']) {
+    assert.equal(sessionHelpers(raw, 'true', {}, ua).readCPAMCManagementKey(), 'test-密钥-&<>');
+  }
+});
+
+test('CPAMC auth: rejects retired, logged-out, malformed and missing credentials', () => {
+  const data = { state: { managementKey: 'retired-test-key' } };
+  const legacy = { managementKey: storedFixture('legacy-test-key', 1) };
+  for (const raw of [null, JSON.stringify(data), storedFixture(data, 1), 'enc::v3::abc',
+    'enc::v2::!!!', 'enc::v2::', storedFixture(null), storedFixture({}),
+    storedFixture({ state: { managementKey: 123 } }), storedFixture({ state: { managementKey: '  ' } }),
+    storedFixture({ state: { rememberPassword: false } })]) {
+    assert.equal(sessionHelpers(raw, 'true', legacy).readCPAMCManagementKey(), '');
+  }
+  for (const flag of [null, 'false', '']) {
+    assert.equal(sessionHelpers(storedFixture(data), flag).readCPAMCManagementKey(), '');
+  }
+  const blocked = load(undefined, { localStorage: { getItem() { throw new Error('Blocked'); } } });
+  assert.equal(blocked.readCPAMCManagementKey(), '');
+});
+
+test('non-auth storage retains v1 and plaintext compatibility alongside v2', () => {
+  for (const raw of [storedFixture('zh-CN', 1), storedFixture('zh-CN'), JSON.stringify('zh-CN')]) {
+    assert.equal(sessionHelpers(null, 'true', { 'cli-proxy-language': raw }, 'old-browser').readStoredValue('cli-proxy-language'), 'zh-CN');
+  }
+});
 
 test('plugins list: exactly five Go entities, one pass, no HTML parser', () => {
   const { pluginsDirFromList: decode } = load();

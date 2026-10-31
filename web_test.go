@@ -47,6 +47,10 @@ func TestSettingsPageEmbedsAssetsWithNonceCSP(t *testing.T) {
 	}
 	for _, expected := range []string{
 		"id=\"authGate\"",
+		"id=\"managementKey\"",
+		"id=\"authForm\"",
+		"type=\"password\"",
+		"connectManually",
 		"id=\"policyNav\"",
 		"class=\"commandbar\"",
 		"is-embedded",
@@ -77,8 +81,6 @@ func TestSettingsPageEmbedsAssetsWithNonceCSP(t *testing.T) {
 		"default_action",
 		"models_endpoint",
 		"allow_query_keys",
-		"id=\"managementKey\"",
-		"id=\"authForm\"",
 		"style=\"",
 	} {
 		if strings.Contains(body, forbidden) {

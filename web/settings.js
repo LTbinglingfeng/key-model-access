@@ -15,7 +15,8 @@
   const CPAMC_AUTH_KEY = "cli-proxy-auth";
   const CPAMC_THEME_KEY = "cli-proxy-theme";
   const CPAMC_LANGUAGE_KEY = "cli-proxy-language";
-  const OBFUSCATION_PREFIX = "enc::v1::";
+  const OBFUSCATION_PREFIX = "enc::v2::";
+  const LEGACY_OBFUSCATION_PREFIX = "enc::v1::";
   const OBFUSCATION_SALT = "cli-proxy-api-webui::secure-storage";
 
   const icons = {
@@ -43,16 +44,18 @@
       "session.connectingTitle": "正在接入管理会话",
       "session.readingMessage": "正在读取 CPAMC 当前连接信息，无需再次输入 Management Key。",
       "session.retry": "重新读取会话",
-      "session.footnote": "插件只复用 CPAMC 已保存的同源会话，不会复制或持久化 Management Key。",
+      "session.footnote": "Management Key 仅用于当前页面连接，不会由插件写入浏览器存储。",
       "session.noSessionTitle": "未找到可复用的 CPAMC 会话",
-      "session.noSessionMessage": "自动接入要求 CPAMC 与 CPA 同源，并在登录时启用“记住密码”。请确认后返回此页面重试；插件不会要求你再次输入 Management Key。",
-      "session.loadingMessage": "正在验证 CPAMC 已保存的连接信息并加载模型策略…",
-      "session.expired": "CPAMC 保存的 Management Key 已失效。请返回 CPAMC 重新登录并启用“记住密码”。",
+      "session.noSessionMessage": "你可以在下方手动填写 Management Key，或在同源 CPAMC 登录并启用“记住密码”后重新读取会话。",
+      "session.loadingMessage": "正在验证 Management Key 并加载模型策略…",
+      "session.expired": "Management Key 无效或已失效，请重新填写，或返回 CPAMC 重新登录。",
       "session.connectFailed": "无法连接 CPA：{message}",
       "session.unavailableTitle": "管理会话不可用",
-      "session.endedTitle": "CPAMC 会话已结束",
+      "session.manualLabel": "Management Key",
+      "session.manualConnect": "使用密钥连接",
+      "session.endedTitle": "管理会话已结束",
       "session.endedDraft": "未保存的策略草稿已保留在当前页面内存中。请重新登录；会话恢复后草稿会自动还原。",
-      "session.endedNoDraft": "请先在 CPAMC 重新登录并启用“记住密码”，页面会自动重新接入。",
+      "session.endedNoDraft": "请手动填写 Management Key，或在 CPAMC 重新登录并启用“记住密码”。",
       "nav.label": "策略导航",
       "nav.search": "搜索 Key",
       "nav.overview": "概览",
@@ -171,16 +174,18 @@
       "session.connectingTitle": "Connecting to management session",
       "session.readingMessage": "Reading the current CPAMC connection. There is no need to enter the Management Key again.",
       "session.retry": "Retry session",
-      "session.footnote": "The plugin only reuses the same-origin session saved by CPAMC and never copies or persists the Management Key.",
+      "session.footnote": "The Management Key is used only for this page connection and is never written to browser storage by the plugin.",
       "session.noSessionTitle": "No reusable CPAMC session found",
-      "session.noSessionMessage": "Automatic sign-in requires CPAMC and CPA to share the same origin, with “Remember password” enabled at login. Check this and retry here; the plugin will never ask you to re-enter the Management Key.",
-      "session.loadingMessage": "Verifying the saved CPAMC connection and loading model policies…",
-      "session.expired": "The Management Key saved by CPAMC is no longer valid. Sign in to CPAMC again with “Remember password” enabled.",
+      "session.noSessionMessage": "Enter a Management Key below, or sign in to same-origin CPAMC with “Remember password” enabled and retry the session.",
+      "session.loadingMessage": "Verifying the Management Key and loading model policies…",
+      "session.expired": "The Management Key is invalid or expired. Enter it again, or sign in to CPAMC again.",
       "session.connectFailed": "Unable to connect to CPA: {message}",
       "session.unavailableTitle": "Management session unavailable",
-      "session.endedTitle": "CPAMC session ended",
+      "session.manualLabel": "Management Key",
+      "session.manualConnect": "Connect with key",
+      "session.endedTitle": "Management session ended",
       "session.endedDraft": "Your unsaved policy draft is kept in this page's memory. Sign in again and it will be restored automatically.",
-      "session.endedNoDraft": "Sign in to CPAMC again with “Remember password” enabled; this page will reconnect automatically.",
+      "session.endedNoDraft": "Enter a Management Key, or sign in to CPAMC again with “Remember password” enabled.",
       "nav.label": "Policy navigation",
       "nav.search": "Search keys",
       "nav.overview": "Overview",
@@ -349,6 +354,7 @@
   const state = {
     sessionView: null,
     token: "",
+    sessionSource: "",
     status: null,
     keys: [],
     models: [],
@@ -389,13 +395,16 @@
     })[character]);
   }
 
-  // Mirrors CPAMC secureStorage v1. This is reversible obfuscation for session
-  // compatibility, not cryptography and not a new security boundary.
+  // Mirrors CPAMC secureStorage v2; v1 remains readable for non-auth data only.
+  // This is reversible obfuscation, not cryptography or a security boundary.
   function decodeStoredValue(raw) {
-    if (!raw || !raw.startsWith(OBFUSCATION_PREFIX)) return raw;
-    const encoded = atob(raw.slice(OBFUSCATION_PREFIX.length));
+    const legacy = raw?.startsWith(LEGACY_OBFUSCATION_PREFIX);
+    if (!raw || (!legacy && !raw.startsWith(OBFUSCATION_PREFIX))) return raw;
+    const encoded = atob(raw.slice(legacy ? LEGACY_OBFUSCATION_PREFIX.length : OBFUSCATION_PREFIX.length));
     const encrypted = Uint8Array.from(encoded, (character) => character.charCodeAt(0));
-    const key = new TextEncoder().encode(`${OBFUSCATION_SALT}|${window.location.host}|${navigator.userAgent}`);
+    const key = new TextEncoder().encode(legacy
+      ? `${OBFUSCATION_SALT}|${window.location.host}|${navigator.userAgent}`
+      : `${OBFUSCATION_SALT}|${window.location.host}`);
     const decoded = new Uint8Array(encrypted.length);
     for (let index = 0; index < encrypted.length; index += 1) decoded[index] = encrypted[index] ^ key[index % key.length];
     return new TextDecoder().decode(decoded);
@@ -415,11 +424,12 @@
   function readCPAMCManagementKey() {
     try {
       if (localStorage.getItem("isLoggedIn") !== "true") return "";
-      const persisted = readStoredValue(CPAMC_AUTH_KEY);
+      // Match CPAMC's retirement of pre-v2 sessions without modifying its storage.
+      const raw = localStorage.getItem(CPAMC_AUTH_KEY);
+      if (!raw?.startsWith(OBFUSCATION_PREFIX)) return "";
+      const persisted = JSON.parse(decodeStoredValue(raw));
       const current = persisted && typeof persisted === "object" ? persisted.state?.managementKey : "";
-      if (typeof current === "string" && current.trim()) return current.trim();
-      const legacy = readStoredValue("managementKey");
-      return typeof legacy === "string" ? legacy.trim() : "";
+      return typeof current === "string" ? current.trim() : "";
     } catch (_) {
       return "";
     }
@@ -761,17 +771,33 @@
     $("#sessionIcon").classList.toggle("error", kind === "error");
     $("#sessionIcon").innerHTML = kind === "loading" ? icons.spinner : kind === "error" ? icons.warning : icons.check;
     $("#retrySessionButton").hidden = kind !== "error";
+    $("#authForm").hidden = kind !== "error";
   }
 
   async function connectFromCPAMC() {
     if (state.sessionBusy) return;
-    const token = readCPAMCManagementKey();
+    return connectWithToken(readCPAMCManagementKey(), "cpamc");
+  }
+
+  async function connectManually(event) {
+    event.preventDefault();
+    if (state.sessionBusy) return;
+    const input = $("#managementKey");
+    const token = input.value.trim();
+    if (!token) { input.focus(); return; }
+    input.value = "";
+    return connectWithToken(token, "manual");
+  }
+
+  async function connectWithToken(token, source) {
+    if (state.sessionBusy) return;
     if (!token) {
       state.token = "";
       setSessionState("error", "session.noSessionTitle", "session.noSessionMessage");
       return;
     }
     state.token = token;
+    state.sessionSource = source;
     state.sessionBusy = true;
     setSessionState("loading", "session.connectingTitle", "session.loadingMessage");
     try {
@@ -786,6 +812,7 @@
         state.pendingScope = "";
       }
       state.sessionEnded = false;
+      $("#managementKey").value = "";
       authGate.hidden = true;
       app.hidden = false;
       renderAll();
@@ -1370,10 +1397,12 @@
   }
 
   $("#retrySessionButton").addEventListener("click", connectFromCPAMC);
+  $("#authForm").addEventListener("submit", connectManually);
   window.addEventListener("storage", (event) => {
     if (event.key === CPAMC_THEME_KEY) syncTheme();
     if (event.key === CPAMC_LANGUAGE_KEY || event.key === "i18nextLng") syncLocale();
-    if (event.key !== CPAMC_AUTH_KEY && event.key !== "isLoggedIn") return;
+    if (event.key !== CPAMC_AUTH_KEY && event.key !== "isLoggedIn" && event.key !== null) return;
+    if (state.sessionSource === "manual" && (state.token || state.sessionBusy)) return;
     if (app.hidden) {
       connectFromCPAMC();
       return;

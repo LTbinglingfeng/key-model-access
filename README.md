@@ -38,8 +38,8 @@ macOS arm64 使用默认版本时会生成：
 
 ```text
 dist/key-model-access.dylib
-dist/key-model-access_0.1.3_darwin_arm64.zip
-dist/key-model-access_0.1.3_darwin_arm64.zip.sha256
+dist/key-model-access_0.2.1_darwin_arm64.zip
+dist/key-model-access_0.2.1_darwin_arm64.zip.sha256
 ```
 
 动态库扩展名：
@@ -66,7 +66,7 @@ make install CPA_DIR=/path/to/CLIProxyAPI
 
 ```bash
 make build GOOS=darwin GOARCH=arm64 BUILD_DIR=/path/to/plugins/darwin/arm64
-make package VERSION=0.2.0
+make package VERSION=0.2.1
 ```
 
 ### 2. 配置 CPA Key 与空的 v2 策略
@@ -143,12 +143,13 @@ v1 的 Key 身份和 v2 的 `caller_scope` 架构不同，旧策略不能原地�
 http://<CPA_HOST>:<CPA_PORT>/v0/resource/plugins/key-model-access/settings
 ```
 
-页面会以“模型权限”注册到支持插件资源菜单的 CPAMC 管理界面。UI 不再要求重复输入 Management Key，而是只读复用 CPAMC 已保存的 `cli-proxy-auth` 同源会话，并自动同步 CPAMC 的主题。自动接入要求：
+页面会以“模型权限”注册到支持插件资源菜单的 CPAMC 管理界面。UI 优先只读复用 CPAMC 已保存的 `cli-proxy-auth` 同源会话，失败时允许手动输入 Management Key，并自动同步 CPAMC 的主题。自动接入要求：
 
 - CPAMC 页面与 CPA API 使用相同 origin（协议、主机和端口均相同）；
 - 登录 CPAMC 时启用“记住密码”，使 Management Key 存在于 CPAMC 的 Local Storage 会话中。
+- 会话读取与新版 CPAMC 的 `enc::v2::` 格式保持一致（混淆不再依赖浏览器 User-Agent）。不再接受 v1、明文或独立的旧 `managementKey` 登录凭据；从旧版升级后需在新版 CPAMC 重新登录并启用“记住密码”。插件不会迁移、删除或改写 CPAMC 存储；非认证数据仍兼容 v1。
 
-条件不满足时，页面会提示返回 CPAMC 修复会话，不提供手工密钥输入。接入成功后 UI 会：
+条件不满足或连接失败时，页面提供密码输入框，可手动填写当前 CPA 的 Management Key，也可重新读取 CPAMC 会话。手动密钥仅保留在当前页面内存中，提交后清空输入框，刷新页面后需重新填写；不会写入 Local Storage / Session Storage，也不会修改 CPAMC 登录状态。手动连接不受 CPAMC 存储变更影响，但 CPA 返回未授权时仍会结束会话。接入成功后 UI 会：
 
 1. 若尚未持久化，读取 CPA 的 `plugins_dir`，创建 `<plugins.dir>/key-model-access/config.toml`，再通过 CPA 官方插件配置 API 写入 `policy_file`；
 2. `GET /v0/management/api-keys`，只读获取 CPA 当前顶层 Key；
@@ -162,7 +163,7 @@ UI 不创建、修改或删除 CPA Key，也不会向 `/v0/management/api-keys` 
 ### UI 安全边界
 
 - `/v0/management/api-keys` 会把原始 Key 返回给已通过 Management 认证的浏览器。UI 仅在 JavaScript 中短暂用于计算 scope，并用第一个 Key 读取模型目录；随后尽力清空临时数组。为便于辨认，UI 只显示每个 Key 的掩码片段（例如 `sk-abcd••••••wxyz`；短 Key 显示更少字符，少于 8 位则完全隐藏）。完整 Key 不会写入 DOM、Local Storage、Session Storage、URL 或插件策略。
-- Management Key 由 CPAMC 决定是否持久化。插件只读解析 CPAMC 的同源会话，在自己的 JavaScript 内存中使用，不会复制或再次写入存储。
+- CPAMC 会话的 Management Key 由 CPAMC 决定是否持久化。插件复用或手动输入的密钥均只在当前页面 JavaScript 内存中使用，不会再次写入存储。
 - CPAMC 当前的浏览器端存储是可逆混淆，不是安全边界。同源页面、浏览器扩展和同机恶意软件均属于信任边界。
 - 页面只读同步 CPAMC 的主题，不再维护独立主题偏好。
 - 界面支持简体中文与英文：优先跟随 CPAMC 当前语言（嵌入页 `<html lang>`，其次 `cli-proxy-language` / `i18nextLng`），再按浏览器语言选择；其他语言默认显示英文，切换语言时页面实时更新。
@@ -308,7 +309,7 @@ curl -sS \
 
 ```json
 {
-  "version": "0.1.3",
+  "version": "0.2.1",
   "schema_version": 2,
   "auth_mode": "cpa_builtin_api_keys",
   "identity_source": "Metadata.caller_scope",
@@ -377,24 +378,24 @@ CPA 的 RequestInterceptor 目前没有完整覆盖以下路径或流程：
 
 ## 构建与发布产物
 
-GitHub Actions 工作流 [`.github/workflows/build.yml`](./.github/workflows/build.yml) 负责测试、构建和发布格式。版本 0.1.3 的压缩包命名为：
+GitHub Actions 工作流 [`.github/workflows/build.yml`](./.github/workflows/build.yml) 负责测试、构建和发布格式。版本 0.2.1 的压缩包命名为：
 
 ```text
-key-model-access_0.1.3_<goos>_<goarch>.zip
+key-model-access_0.2.1_<goos>_<goarch>.zip
 checksums.txt
 ```
 
 本地生成当前平台压缩包和聚合校验文件：
 
 ```bash
-make checksums VERSION=0.2.0
+make checksums VERSION=0.2.1
 ```
 
-维护者创建 0.2.0 发布标签的示例：
+维护者创建 0.2.1 发布标签的示例：
 
 ```bash
-git tag -a v0.2.0 -m "Release v0.2.0"
-git push origin v0.2.0
+git tag -a v0.2.1 -m "Release v0.2.1"
+git push origin v0.2.1
 ```
 
 ## 官方资料
