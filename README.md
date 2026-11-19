@@ -158,11 +158,13 @@ http://<CPA_HOST>:<CPA_PORT>/v0/resource/plugins/key-model-access/settings
 5. 读取插件 v2 策略并按 scope 关联；
 6. 通过选择器编辑、保存 `allow_models` 和 `deny_models`。选择器提供精确模型、全部模型 `*` 及当前目录可识别的常用模型家族通配符；已有的其他自定义通配符会继续保留并显示其目录匹配结果。
 
+在同一浏览器上使用同源 CPAMC 时，插件会只读显示并搜索 CPAMC 为当前 CPA 保存的 Key 备注。修改备注后，重新打开插件页或点击刷新即可读取最新备注。无本地备注时，页面显示 Key 编号和掩码片段。
+
 UI 不创建、修改或删除 CPA Key，也不会向 `/v0/management/api-keys` 发出写请求。Key 生命周期仍应通过 CPA 配置或 CPA 自身管理能力完成。UI 会在策略保存前后核对 CPA Key 集合：保存前发现变化会中止并要求刷新；保存后发现变化会立即警告新 Key 当前默认允许全部。两次请求之间仍无法形成事务，因此 Key 变更和策略保存应由运维流程串行化。不再对应当前 Key 的旧 scope 会标记为失效策略，并在保存时保留，避免静默删除。
 
 ### UI 安全边界
 
-- `/v0/management/api-keys` 会把原始 Key 返回给已通过 Management 认证的浏览器。UI 仅在 JavaScript 中短暂用于计算 scope，并用第一个 Key 读取模型目录；随后尽力清空临时数组。为便于辨认，UI 只显示每个 Key 的掩码片段（例如 `sk-abcd••••••wxyz`；短 Key 显示更少字符，少于 8 位则完全隐藏）。完整 Key 不会写入 DOM、Local Storage、Session Storage、URL 或插件策略。
+- `/v0/management/api-keys` 会把原始 Key 返回给已通过 Management 认证的浏览器。UI 在 JavaScript 中短暂使用原始 Key 计算 scope、匹配 CPAMC 备注和读取模型目录，随后尽力清空临时数组。UI 显示掩码片段（例如 `sk-abcd••••••wxyz`，少于 8 位则完全隐藏），以及该 Key 对应的本地备注（若有）。完整 Key 不会写入 DOM、Local Storage、Session Storage、URL 或插件策略，备注也不会写入插件策略。
 - CPAMC 会话的 Management Key 由 CPAMC 决定是否持久化。插件复用或手动输入的密钥均只在当前页面 JavaScript 内存中使用，不会再次写入存储。
 - CPAMC 当前的浏览器端存储是可逆混淆，不是安全边界。同源页面、浏览器扩展和同机恶意软件均属于信任边界。
 - 页面只读同步 CPAMC 的主题，不再维护独立主题偏好。

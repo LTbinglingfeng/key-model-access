@@ -13,6 +13,7 @@
   };
 
   const CPAMC_AUTH_KEY = "cli-proxy-auth";
+  const CPAMC_KEY_NAMES_PREFIX = "api-key-names:v1:";
   const CPAMC_THEME_KEY = "cli-proxy-theme";
   const CPAMC_LANGUAGE_KEY = "cli-proxy-language";
   const OBFUSCATION_PREFIX = "enc::v2::";
@@ -57,7 +58,7 @@
       "session.endedDraft": "未保存的策略草稿已保留在当前页面内存中。请重新登录；会话恢复后草稿会自动还原。",
       "session.endedNoDraft": "请手动填写 Management Key，或在 CPAMC 重新登录并启用“记住密码”。",
       "nav.label": "策略导航",
-      "nav.search": "搜索 Key",
+      "nav.search": "搜索 Key 或备注",
       "nav.overview": "概览",
       "nav.noMatch": "没有匹配的 Key",
       "nav.noKeys": "CPA 当前没有 API Key",
@@ -187,7 +188,7 @@
       "session.endedDraft": "Your unsaved policy draft is kept in this page's memory. Sign in again and it will be restored automatically.",
       "session.endedNoDraft": "Enter a Management Key, or sign in to CPAMC again with “Remember password” enabled.",
       "nav.label": "Policy navigation",
-      "nav.search": "Search keys",
+      "nav.search": "Search keys or names",
       "nav.overview": "Overview",
       "nav.noMatch": "No matching keys",
       "nav.noKeys": "CPA has no API keys yet",
@@ -435,6 +436,21 @@
     }
   }
 
+  function readCPAMCKeyNames() {
+    const origin = window.location?.origin;
+    const storedBase = readStoredValue(CPAMC_AUTH_KEY)?.state?.apiBase;
+    let apiBase = origin;
+    if (typeof storedBase === "string") {
+      try {
+        if (new URL(storedBase).origin === origin) apiBase = storedBase;
+      } catch (_) { /* use the current origin */ }
+    }
+    if (!apiBase) return null;
+    const names = readStoredValue(CPAMC_KEY_NAMES_PREFIX + apiBase);
+    if (!names || typeof names !== "object" || Array.isArray(names) || !Object.keys(names).length) return null;
+    return { apiBase, names };
+  }
+
   function normalizeModels(value) {
     if (!Array.isArray(value)) return [];
     return [...new Set(value.map((model) => String(model).trim()).filter(Boolean))];
@@ -474,8 +490,8 @@
     return `${scope.slice(0, 10)}…${scope.slice(-6)}`;
   }
 
-  function keyLabel(index) {
-    return `CPA API Key ${String(index + 1).padStart(2, "0")}`;
+  function keyLabel(index, name = "") {
+    return name || `CPA API Key ${String(index + 1).padStart(2, "0")}`;
   }
 
   async function api(path, options = {}) {
@@ -641,9 +657,15 @@
     const temporaryValues = values.slice();
     const normalizedValues = temporaryValues.map((value) => String(value).trim()).filter(Boolean);
     try {
-      const [scopes, catalog] = await Promise.all([
+      const cpamc = readCPAMCKeyNames();
+      const [scopes, catalog, names] = await Promise.all([
         Promise.all(normalizedValues.map((value) => sha256Hex(`cli-proxy-api:caller-scope:v1\0${value}`))),
-        options.includeCatalog ? fetchModelCatalog(normalizedValues[0] || "") : Promise.resolve(null)
+        options.includeCatalog ? fetchModelCatalog(normalizedValues[0] || "") : null,
+        cpamc ? Promise.all(normalizedValues.map(async (value) => {
+          const fingerprint = await sha256Hex(JSON.stringify(["api-key-name", cpamc.apiBase, value]));
+          const name = cpamc.names[fingerprint];
+          return typeof name === "string" ? name.trim() : "";
+        })) : []
       ]);
       const seen = new Set();
       const keys = [];
@@ -654,6 +676,7 @@
           scope,
           fingerprint: shortFingerprint(scope),
           mask: maskKey(normalizedValues[index]),
+          name: names[index] || "",
           allow_models: [],
           deny_models: []
         });
@@ -915,7 +938,7 @@
   function renderNav() {
     const query = state.search.trim().toLowerCase();
     const visible = state.keys.map((key, index) => ({ key, index })).filter(({ key, index }) =>
-      !query || key.mask.toLowerCase().includes(query) || key.fingerprint.toLowerCase().includes(query) || keyLabel(index).toLowerCase().includes(query)
+      !query || [key.mask, key.fingerprint, keyLabel(index), key.name].some((value) => value.toLowerCase().includes(query))
     );
     nav.innerHTML = `
       <button class="nav-item" type="button" data-select="overview" aria-current="${state.selectedIndex < 0 ? "page" : "false"}">
@@ -924,9 +947,9 @@
       </button>
       <p class="nav-group-label"><span>API Keys</span><span id="policyCount">${state.keys.length}</span></p>
       ${visible.length ? visible.map(({ key, index }) => `
-        <button class="nav-item" type="button" data-select="key" data-index="${index}" aria-current="${state.selectedIndex === index ? "page" : "false"}" aria-label="${escapeHTML(keyLabel(index))}${escapeHTML(t("list.separator"))}${escapeHTML(key.mask)}" title="SHA-256 ${escapeHTML(key.fingerprint)}">
+        <button class="nav-item" type="button" data-select="key" data-index="${index}" aria-current="${state.selectedIndex === index ? "page" : "false"}" aria-label="${escapeHTML(keyLabel(index, key.name))}${escapeHTML(t("list.separator"))}${escapeHTML(key.mask)}" title="SHA-256 ${escapeHTML(key.fingerprint)}">
           <span class="nav-icon">${icons.key}</span>
-          <span class="nav-copy"><strong>${escapeHTML(keyLabel(index))}</strong><span>${escapeHTML(key.mask)}</span></span>
+          <span class="nav-copy"><strong>${escapeHTML(keyLabel(index, key.name))}</strong><span>${escapeHTML(key.mask)}</span></span>
           ${ruleBadge(key)}
         </button>`).join("") : `<p class="empty-nav">${escapeHTML(t(query ? "nav.noMatch" : "nav.noKeys"))}</p>`}
     `;
@@ -957,7 +980,7 @@
       : "";
     const keyRows = state.keys.map((key, index) => `
       <button class="key-row" type="button" data-select="key" data-index="${index}">
-        <span class="key-row-name"><strong>${escapeHTML(keyLabel(index))}</strong><span class="mono">${escapeHTML(key.mask)}</span></span>
+        <span class="key-row-name"><strong>${escapeHTML(keyLabel(index, key.name))}</strong><span class="mono">${escapeHTML(key.mask)}</span></span>
         <span class="key-row-rules">${hasRules(key) ? `${rulesSummary(key.allow_models, t("rules.allow"))}${rulesSummary(key.deny_models, t("rules.deny"), true)}` : `<span class="muted">${escapeHTML(t("rules.defaultAllowAll"))}</span>`}</span>
         <span class="key-row-chevron" aria-hidden="true">${icons.chevronRight}</span>
       </button>`).join("");
@@ -1017,7 +1040,7 @@
     const empty = !hasRules(key);
     editor.innerHTML = `
       <header class="editor-head">
-        <h1>${escapeHTML(keyLabel(index))}</h1>
+        <h1 class="key-title">${escapeHTML(keyLabel(index, key.name))}</h1>
         <p class="editor-subtitle key-summary">
           <span class="key-mask mono">${escapeHTML(key.mask)}</span>
           <span class="key-fingerprint mono" title="${escapeHTML(t("key.fingerprintTitle"))}">SHA-256 ${escapeHTML(key.fingerprint)}</span>

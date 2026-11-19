@@ -14,14 +14,14 @@ function load(respond = () => { throw new Error('Unexpected fetch'); }, globals 
     document: { querySelector: () => null },
     window: { setTimeout, clearTimeout },
     ...globals,
-    AbortController, TextEncoder, TextDecoder, atob,
+    AbortController, TextEncoder, TextDecoder, URL, atob,
     fetch: async (path, options) => {
       const payload = await respond(path, options);
       return { ok: true, json: async () => payload };
     }
   });
   vm.runInContext(source.slice(0, source.indexOf(marker)) +
-    'globalThis.helpers = { pluginsDirFromList, initializeDefaultPersistence, fetchCurrentKeys, api, normalizePolicyDocument, readCPAMCManagementKey, readStoredValue, connectManually, connectFromCPAMC, state, MESSAGES, t, getLocale: () => locale }; })();', context);
+    'globalThis.helpers = { pluginsDirFromList, initializeDefaultPersistence, fetchCurrentKeys, api, normalizePolicyDocument, readCPAMCManagementKey, readStoredValue, connectManually, connectFromCPAMC, renderNav, renderEditor, serializablePolicy, state, MESSAGES, t, getLocale: () => locale }; })();', context);
   return context.helpers;
 }
 
@@ -162,6 +162,60 @@ test('API keys are hashed and sent to model catalog without entity decoding', as
   const result = await helpers.fetchCurrentKeys({ includeCatalog: true });
   assert.equal(result.keys[0].scope, createHash('sha256').update(`cli-proxy-api:caller-scope:v1\0${key}`).digest('hex'));
   assert.equal(result.catalog.models[0].id, 'model-&lt;');
+});
+
+test('CPAMC key names match by fingerprint, render as text, and stay out of policy', async () => {
+  const origin = 'http://localhost:8317';
+  const apiBase = `${origin}/proxy`;
+  const key = 'sk-synthetic-key-with-name';
+  const other = 'sk-synthetic-key-without-name';
+  const fingerprint = (value, base = apiBase) => createHash('sha256')
+    .update(JSON.stringify(['api-key-name', base, value])).digest('hex');
+  const values = {
+    'cli-proxy-auth': storedFixture({ state: { apiBase, rememberPassword: false } }),
+    [`api-key-names:v1:${apiBase}`]: storedFixture({
+      [fingerprint(key)]: '  测试用途 <img>  ',
+      [fingerprint(other)]: { invalid: true }
+    }),
+    [`api-key-names:v1:${origin}`]: storedFixture({ [fingerprint(key, origin)]: 'Other instance' })
+  };
+  const nav = {};
+  const editor = { dataset: {} };
+  const helpers = load(() => ({ 'api-keys': [other, key, key] }), {
+    document: { querySelector: selector => ({ '#policyNav': nav, '#editor': editor }[selector] ?? null) },
+    window: { setTimeout, clearTimeout, location: new URL(origin) },
+    localStorage: { getItem: name => values[name] ?? null }
+  });
+
+  const keys = await helpers.fetchCurrentKeys();
+  assert.equal(keys.length, 2);
+  assert.equal(keys[0].name, '');
+  assert.equal(keys[1].name, '测试用途 <img>');
+  assert.equal(keys[1].scope, createHash('sha256').update(`cli-proxy-api:caller-scope:v1\0${key}`).digest('hex'));
+  assert.ok(!JSON.stringify(keys).includes(key));
+
+  helpers.state.keys = keys;
+  helpers.state.search = '测试用途';
+  helpers.renderNav();
+  assert.match(nav.innerHTML, /测试用途 &lt;img&gt;/);
+  assert.doesNotMatch(nav.innerHTML, /CPA API Key 01|<img>/);
+  helpers.renderEditor();
+  assert.match(editor.innerHTML, /CPA API Key 01/);
+  assert.match(editor.innerHTML, /测试用途 &lt;img&gt;/);
+  helpers.state.selectedIndex = 1;
+  helpers.renderEditor();
+  assert.match(editor.innerHTML, /<h1[^>]*>测试用途 &lt;img&gt;<\/h1>/);
+  keys[1].deny_models.push('model');
+  assert.deepEqual(Object.keys(helpers.serializablePolicy().policies[0]).sort(), ['allow_models', 'caller_scope', 'deny_models']);
+
+  values[`api-key-names:v1:${apiBase}`] = 'enc::v2::%';
+  assert.equal((await helpers.fetchCurrentKeys())[1].name, '');
+  const foreignBase = 'http://elsewhere.invalid:8317';
+  values['cli-proxy-auth'] = storedFixture({ state: { apiBase: foreignBase } });
+  values[`api-key-names:v1:${foreignBase}`] = storedFixture({ [fingerprint(key, foreignBase)]: 'Foreign instance' });
+  assert.equal((await helpers.fetchCurrentKeys())[1].name, 'Other instance');
+  delete values['cli-proxy-auth'];
+  assert.equal((await helpers.fetchCurrentKeys())[1].name, 'Other instance');
 });
 
 test('generic API and policy normalization preserve plugin entity literals', async () => {
