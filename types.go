@@ -73,10 +73,16 @@ type capabilities struct {
 }
 
 type responseInterceptRequest struct {
-	Kind         string
-	SourceFormat string
-	Body         []byte
-	Metadata     map[string]any
+	Model           string
+	RequestedModel  string
+	OriginalRequest []byte
+	RequestBody     []byte
+	StatusCode      int
+	Stream          bool
+	Kind            string
+	SourceFormat    string
+	Body            []byte
+	Metadata        map[string]any
 }
 
 type responseInterceptResponse struct {

@@ -54,3 +54,39 @@ func TestModelListInterceptor(t *testing.T) {
 		})
 	}
 }
+
+func TestLegacyModelListWithoutKind(t *testing.T) {
+	installTestPolicy(t, policyDocument{Version: 2, Policies: []policyConfig{
+		{CallerScope: scopeA, AllowModels: []string{"allowed"}},
+	}})
+	for _, tc := range []struct {
+		name, format, model, input, body, want string
+	}{
+		{"openai list", "openai", "", "", `{"object":"list","data":[{"id":"hidden"}]}`, `{"data":[],"object":"list"}`},
+		{"codex list", "openai", "", "", `{"models":[{"slug":"hidden"}]}`, `{"models":[]}`},
+		{"claude list", "claude", "", "", `{"data":[{"id":"hidden"}]}`, `{"data":[],"first_id":"","last_id":""}`},
+		{"execution with list-shaped output", "openai", "allowed", "", `{"data":[{"id":"hidden"}]}`, ""},
+		{"execution with input", "openai", "", "{}", `{"models":[]}`, ""},
+		{"token count", "claude", "", "", `{"input_tokens":42}`, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			raw, err := json.Marshal(map[string]any{
+				"StatusCode": 200, "SourceFormat": tc.format, "Model": tc.model,
+				"OriginalRequest": []byte(tc.input), "Body": []byte(tc.body),
+				"Metadata": map[string]string{"caller_scope": scopeA},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := handleMethod(methodResponseInterceptAfter, raw)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var response responseInterceptResponse
+			unwrapEnvelope(t, result, &response)
+			if string(response.Body) != tc.want || (tc.want == "" && response.Headers != nil) {
+				t.Fatalf("unexpected response: %+v", response)
+			}
+		})
+	}
+}

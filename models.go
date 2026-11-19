@@ -43,7 +43,7 @@ func interceptModelList(raw []byte) ([]byte, error) {
 		return nil, err
 	}
 	result := responseInterceptResponse{}
-	if req.Kind != "model_list" || (req.SourceFormat != "openai" && req.SourceFormat != "claude") {
+	if (req.SourceFormat != "openai" && req.SourceFormat != "claude") || !isModelList(req) {
 		return okEnvelope(result)
 	}
 	result.Headers = http.Header{"Cache-Control": {"private, no-store"}}
@@ -62,6 +62,29 @@ func interceptModelList(raw []byte) ([]byte, error) {
 		result.ClearHeaders = []string{"Content-Length", "ETag"}
 	}
 	return okEnvelope(result)
+}
+
+func isModelList(req responseInterceptRequest) bool {
+	if req.Kind != "" {
+		return req.Kind == "model_list"
+	}
+	// Before CPA v8.0.78 only the catalog writer sends a successful response
+	// with neither model identity nor input body. Check its list envelope too.
+	if req.StatusCode != http.StatusOK || req.Stream || req.Model != "" || req.RequestedModel != "" ||
+		len(req.OriginalRequest) != 0 || len(req.RequestBody) != 0 {
+		return false
+	}
+	var catalog struct {
+		Data   json.RawMessage
+		Models json.RawMessage
+	}
+	if json.Unmarshal(req.Body, &catalog) != nil {
+		return false
+	}
+	if req.SourceFormat == "claude" {
+		return len(catalog.Data) > 0 && catalog.Data[0] == '['
+	}
+	return (len(catalog.Data) > 0 && catalog.Data[0] == '[') || (len(catalog.Models) > 0 && catalog.Models[0] == '[')
 }
 
 func filterModelList(raw []byte, sourceFormat string, policy runtimePolicy, hideAll bool) []byte {

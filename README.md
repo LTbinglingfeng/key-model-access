@@ -18,7 +18,7 @@ CLIProxyAPI（CPA）原生动态库插件。CPA 使用 `access.api-keys` 完成�
 
 ## 兼容性
 
-- CLIProxyAPI **v8.0.78 或更新版本**。模型目录过滤依赖宿主向插件传递 `Kind: model_list` 以及认证后的 `Metadata.caller_scope`。
+- CLIProxyAPI **v8.0.78 或更新版本**。插件优先按 `Kind: model_list` 识别目录，并读取认证后的 `Metadata.caller_scope`。对于 v8.0.75 这类未传递 `Kind` 的 schema 10 宿主，插件结合响应上下文和目录结构识别列表。
 - 插件要求 RPC schema 10 或更高，当前声明 schema 10。策略文件仍使用 **version 2**，已有规则无需迁移。
 - 支持 CPA 动态插件的 CGO 构建；需要 Go 1.24、C 编译器和 `CGO_ENABLED=1`。
 - 可通过任一 Management API 响应头 `X-CPA-SUPPORT-PLUGIN: 1` 确认 CPA 二进制支持插件。
