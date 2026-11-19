@@ -8,7 +8,7 @@ import (
 )
 
 func TestRPCNegotiationPreservesV2Policies(t *testing.T) {
-	for _, host := range []uint32{1, 2, 3, 5, 6, 7} {
+	for _, host := range []uint32{0, 6, 9, 10, 11} {
 		t.Run(fmt.Sprint(host), func(t *testing.T) {
 			globalState.clear()
 			t.Cleanup(globalState.clear)
@@ -17,6 +17,12 @@ func TestRPCNegotiationPreservesV2Policies(t *testing.T) {
 				t.Fatal(err)
 			}
 			raw, err := handleMethod(methodPluginRegister, request)
+			if host < minimumRPCSchemaVersion {
+				if err == nil {
+					t.Fatal("registration accepted an unsupported host")
+				}
+				return
+			}
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -29,19 +35,12 @@ func TestRPCNegotiationPreservesV2Policies(t *testing.T) {
 			if registration.SchemaVersion != wantSchema {
 				t.Fatalf("RPC schema = %d, want %d", registration.SchemaVersion, wantSchema)
 			}
-			supported := host >= minimumRPCSchemaVersion
-			if registration.Capabilities.RequestInterceptor != supported {
-				t.Fatal("incorrect interceptor capability")
+			if !registration.Capabilities.RequestInterceptor || !registration.Capabilities.ResponseInterceptor {
+				t.Fatal("missing interceptor capabilities")
 			}
 			cfg, snapshot, _, _, _, _ := globalState.current()
-			if cfg.Version != 2 {
-				t.Fatalf("policy version = %d", cfg.Version)
-			}
-			if snapshot.BlockAll == supported {
-				t.Fatalf("unexpected fail-closed state: %v", snapshot.BlockAll)
-			}
-			if !supported {
-				return
+			if cfg.Version != 2 || snapshot.BlockAll {
+				t.Fatalf("unexpected policy state: version=%d fail_closed=%v", cfg.Version, snapshot.BlockAll)
 			}
 			if !policyAllows(snapshot.ByCallerScope[scopeA], "vendor/a&b") {
 				t.Fatal("v2 policy was not retained")

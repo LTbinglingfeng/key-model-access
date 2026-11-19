@@ -141,7 +141,7 @@ func TestInterceptorIdentityAndUnconfiguredKeyRules(t *testing.T) {
 func TestInitialInvalidConfigurationBlocksAll(t *testing.T) {
 	globalState.clear()
 	t.Cleanup(globalState.clear)
-	raw, _ := json.Marshal(lifecycleRequest{SchemaVersion: 2, ConfigYAML: []byte("version: 1\npolicies: []\n")})
+	raw, _ := json.Marshal(lifecycleRequest{SchemaVersion: rpcSchemaVersion, ConfigYAML: []byte("version: 1\npolicies: []\n")})
 	if err := configure(raw); err != nil {
 		t.Fatalf("configure() error = %v", err)
 	}
@@ -158,11 +158,11 @@ func TestInitialInvalidConfigurationBlocksAll(t *testing.T) {
 func TestConfigurePreservesLastValidPolicyOnInvalidReload(t *testing.T) {
 	globalState.clear()
 	t.Cleanup(globalState.clear)
-	valid, _ := json.Marshal(lifecycleRequest{SchemaVersion: 2, ConfigYAML: []byte("enabled: true\npriority: 10\nstore: memory\nversion: 2\npolicies:\n  - caller_scope: " + scopeA + "\n    allow_models: [gpt-*]\n    deny_models: []\n")})
+	valid, _ := json.Marshal(lifecycleRequest{SchemaVersion: rpcSchemaVersion, ConfigYAML: []byte("enabled: true\npriority: 10\nstore: memory\nversion: 2\npolicies:\n  - caller_scope: " + scopeA + "\n    allow_models: [gpt-*]\n    deny_models: []\n")})
 	if err := configure(valid); err != nil {
 		t.Fatal(err)
 	}
-	invalid, _ := json.Marshal(lifecycleRequest{SchemaVersion: 2, ConfigYAML: []byte("version: 2\nunknown_field: true\n")})
+	invalid, _ := json.Marshal(lifecycleRequest{SchemaVersion: rpcSchemaVersion, ConfigYAML: []byte("version: 2\nunknown_field: true\n")})
 	if err := configure(invalid); err != nil {
 		t.Fatalf("invalid reconfigure should retain the snapshot: %v", err)
 	}
@@ -182,7 +182,7 @@ func TestConfiguredMissingPolicyFileFailsClosed(t *testing.T) {
 	globalState.clear()
 	t.Cleanup(globalState.clear)
 	missing := filepath.Join(t.TempDir(), "missing.yaml")
-	raw, _ := json.Marshal(lifecycleRequest{SchemaVersion: 2, ConfigYAML: []byte("policy_file: " + missing + "\n")})
+	raw, _ := json.Marshal(lifecycleRequest{SchemaVersion: rpcSchemaVersion, ConfigYAML: []byte("policy_file: " + missing + "\n")})
 	if err := configure(raw); err != nil {
 		t.Fatal(err)
 	}

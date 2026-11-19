@@ -9,7 +9,7 @@
     pluginList: "/v0/management/plugins",
     pluginConfig: "/v0/management/plugins/key-model-access/config",
     apiKeys: "/v0/management/api-keys",
-    models: "/v1/models"
+    models: "/v0/management/plugins/key-model-access/models"
   };
 
   const CPAMC_AUTH_KEY = "cli-proxy-auth";
@@ -109,7 +109,7 @@
       "rules.denyDescription": "命中即拒绝，优先于允许规则",
       "rules.count": "{count} 条规则",
       "key.fingerprintTitle": "caller scope 指纹",
-      "key.privacy": "页面只显示 Key 的首尾片段用于辨认；完整 Key 仅在内存中短暂用于计算 caller scope 与读取模型目录，不会写入页面、浏览器存储或 URL。",
+      "key.privacy": "页面只显示 Key 的首尾片段用于辨认；完整 Key 仅在内存中短暂用于计算 caller scope 和匹配备注，不会写入页面、浏览器存储或 URL。",
       "picker.allModelsWildcard": "全部模型（*，包含未来新增）",
       "picker.matched": "已匹配 {matched} / {total} 个模型",
       "picker.chooseFrom": "从 {total} 个模型中选择",
@@ -143,11 +143,9 @@
       "error.http": "请求失败（HTTP {status}）",
       "error.readTimeout": "CPA 响应超时，请检查服务状态。",
       "error.writeTimeout": "操作响应超时，提交结果尚未确认。",
-      "error.catalogNoKey": "CPA 当前没有可用于读取模型目录的 API Key。",
-      "error.catalogHttp": "模型目录请求失败（HTTP {status}）",
-      "error.catalogEmpty": "CPA 的 /v1/models 暂未返回可用模型。",
-      "error.catalogTimeout": "模型目录加载超时。",
+      "error.catalogEmpty": "CPA 的管理接口暂未返回已注册模型。",
       "error.catalogFailed": "模型目录加载失败。",
+      "error.catalogInvalid": "CPA 的管理接口返回了无法识别的模型目录。",
       "error.keysUnrecognized": "CPA 返回了无法识别的 API Key 列表。",
       "error.persistTimeout": "CPA 已保存插件配置，但等待策略文件生效超时。",
       "error.noPluginsDir": "CPA 未返回有效的 plugins_dir。",
@@ -239,7 +237,7 @@
       "rules.denyDescription": "Matching models are denied, overriding allow rules",
       "rules.count": ({ count }) => `${count} ${plural(count, "rule", "rules")}`,
       "key.fingerprintTitle": "caller scope fingerprint",
-      "key.privacy": "Only the first and last characters of each key are shown for identification. The full key is held in memory only briefly to compute the caller scope and read the model catalog, and is never written to the page, browser storage, or URLs.",
+      "key.privacy": "Only the first and last characters of each key are shown for identification. The full key is held in memory only briefly to compute the caller scope and match key names, and is never written to the page, browser storage, or URLs.",
       "picker.allModelsWildcard": "All models (*, including future ones)",
       "picker.matched": ({ matched, total }) => `${matched} / ${total} ${plural(total, "model", "models")} matched`,
       "picker.chooseFrom": ({ total }) => `Choose from ${total} ${plural(total, "model", "models")}`,
@@ -273,11 +271,9 @@
       "error.http": "Request failed (HTTP {status})",
       "error.readTimeout": "CPA did not respond in time. Please check the service status.",
       "error.writeTimeout": "The operation timed out; its result has not been confirmed.",
-      "error.catalogNoKey": "CPA has no API Key available to read the model catalog.",
-      "error.catalogHttp": "Model catalog request failed (HTTP {status})",
-      "error.catalogEmpty": "CPA's /v1/models returned no available models.",
-      "error.catalogTimeout": "Loading the model catalog timed out.",
+      "error.catalogEmpty": "CPA's management API returned no registered models.",
       "error.catalogFailed": "Failed to load the model catalog.",
+      "error.catalogInvalid": "CPA returned an unrecognized model catalog response.",
       "error.keysUnrecognized": "CPA returned an unrecognized API Key list.",
       "error.persistTimeout": "CPA saved the plugin config, but timed out waiting for the policy file to take effect.",
       "error.noPluginsDir": "CPA did not return a valid plugins_dir.",
@@ -598,41 +594,17 @@
     return stateWords.map((word) => word.toString(16).padStart(8, "0")).join("");
   }
 
-  async function fetchModelCatalog(apiKey) {
-    if (!apiKey) return { models: [], error: t("error.catalogNoKey") };
-    const controller = new AbortController();
-    const timer = window.setTimeout(() => controller.abort(), 12000);
+  async function fetchModelCatalog() {
     try {
-      const response = await fetch(PATHS.models, {
-        method: "GET",
-        headers: { Accept: "application/json", Authorization: `Bearer ${apiKey}` },
-        signal: controller.signal,
-        cache: "no-store"
-      });
-      let payload = null;
-      try { payload = await response.json(); } catch (_) { payload = null; }
-      if (!response.ok) throw new Error(t("error.catalogHttp", { status: response.status }));
-      const source = Array.isArray(payload) ? payload : Array.isArray(payload?.data) ? payload.data : Array.isArray(payload?.models) ? payload.models : [];
-      const seen = new Set();
-      const models = source.map((item) => {
-        if (typeof item === "string") return { id: item, displayName: "" };
-        if (!item || typeof item !== "object") return null;
-        const id = String(item.id ?? item.name ?? item.model ?? item.value ?? "").trim();
-        const displayName = String(item.display_name ?? item.displayName ?? item.alias ?? "").trim();
-        return id ? { id, displayName: displayName === id ? "" : displayName } : null;
-      }).filter((item) => {
-        if (!item) return false;
-        const key = item.id.toLowerCase();
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      }).sort((left, right) => left.id.localeCompare(right.id));
+      const catalog = await api(PATHS.models);
+      if (!Array.isArray(catalog?.models) || catalog.models.some((id) => typeof id !== "string" || !id)) {
+        throw new Error(t("error.catalogInvalid"));
+      }
+      const models = catalog.models.map((id) => ({ id, displayName: "" }))
+        .sort((left, right) => left.id.localeCompare(right.id));
       return { models, error: models.length ? "" : t("error.catalogEmpty") };
     } catch (error) {
-      const message = error.name === "AbortError" ? t("error.catalogTimeout") : error.message;
-      return { models: [], error: message || t("error.catalogFailed") };
-    } finally {
-      window.clearTimeout(timer);
+      return { models: [], error: error.message || t("error.catalogFailed") };
     }
   }
 
@@ -648,7 +620,7 @@
     return `${key.slice(0, prefix.length + visible)}••••••${key.slice(-visible)}`;
   }
 
-  async function fetchCurrentKeys(options = {}) {
+  async function fetchCurrentKeys() {
     const payload = await api(PATHS.apiKeys, { method: "GET" });
     const rawKeys = payload?.["api-keys"];
     const values = rawKeys === null ? [] : Array.isArray(rawKeys) ? rawKeys : null;
@@ -658,9 +630,8 @@
     const normalizedValues = temporaryValues.map((value) => String(value).trim()).filter(Boolean);
     try {
       const cpamc = readCPAMCKeyNames();
-      const [scopes, catalog, names] = await Promise.all([
+      const [scopes, names] = await Promise.all([
         Promise.all(normalizedValues.map((value) => sha256Hex(`cli-proxy-api:caller-scope:v1\0${value}`))),
-        options.includeCatalog ? fetchModelCatalog(normalizedValues[0] || "") : null,
         cpamc ? Promise.all(normalizedValues.map(async (value) => {
           const fingerprint = await sha256Hex(JSON.stringify(["api-key-name", cpamc.apiBase, value]));
           const name = cpamc.names[fingerprint];
@@ -681,7 +652,7 @@
           deny_models: []
         });
       });
-      return options.includeCatalog ? { keys, catalog } : keys;
+      return keys;
     } finally {
       normalizedValues.fill("");
       temporaryValues.fill("");
@@ -725,7 +696,6 @@
       method: "POST",
       body: JSON.stringify({ plugins_dir: pluginsDir })
     });
-    // Plugin RPC6 responses are raw on both legacy host2 and current host6.
     // Never entity-decode policy paths (or other plugin response fields).
     const policyFile = typeof initialized?.policy_file === "string" ? initialized.policy_file.trim() : "";
     if (!policyFile) throw new Error(t("error.noPolicyFile"));
@@ -747,11 +717,12 @@
         persistenceSetupError = error.message || t("error.persistSetupFailed");
       }
     }
-    const [policies, keyData] = await Promise.all([
+    const [policies, keys, catalog] = await Promise.all([
       api(PATHS.policies, { method: "GET" }),
-      fetchCurrentKeys({ includeCatalog: true })
+      fetchCurrentKeys(),
+      fetchModelCatalog()
     ]);
-    return { status, policies, keys: keyData.keys, catalog: keyData.catalog, persistenceSetupError };
+    return { status, policies, keys, catalog, persistenceSetupError };
   }
 
   function applyPolicyDocument(rawDocument) {
@@ -1189,9 +1160,9 @@
     const retryButton = editor.querySelector('[data-action="refresh-models"]');
     if (retryButton) { retryButton.disabled = true; retryButton.innerHTML = `${icons.spinner}<span>${escapeHTML(t("picker.loading"))}</span>`; }
     try {
-      const result = await fetchCurrentKeys({ includeCatalog: true });
-      state.models = result.catalog?.models || [];
-      state.modelsError = result.catalog?.error || "";
+      const catalog = await fetchModelCatalog();
+      state.models = catalog.models;
+      state.modelsError = catalog.error;
       renderEditor();
       showToast(state.models.length ? t("picker.loaded", { count: state.models.length }) : state.modelsError, state.models.length ? "success" : "error");
     } finally {

@@ -1,7 +1,8 @@
 # Merge this example into CLIProxyAPI's config.yaml.
 # CPA's built-in provider owns and authenticates these raw API keys.
-api-keys:
-  - "replace-with-a-real-api-key"
+access:
+  api-keys:
+    - "replace-with-a-real-api-key"
 
 plugins:
   enabled: true

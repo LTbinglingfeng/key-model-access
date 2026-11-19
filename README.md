@@ -1,6 +1,6 @@
 # CPA Key Model Access 插件
 
-CLIProxyAPI（CPA）原生动态库插件。CPA 继续使用顶层 `api-keys` 完成下游认证；本插件只在 RequestInterceptor 中读取 CPA 提供的 `Metadata.caller_scope`，为**已经存在的 CPA API Key**执行模型 allow/deny。
+CLIProxyAPI（CPA）原生动态库插件。CPA 使用 `access.api-keys` 完成下游认证。插件根据 CPA 提供的 `Metadata.caller_scope` 为已有 API Key 执行模型权限，并按同一策略过滤 `GET /v1/models`。
 
 > `0.1.x` 相对 `0.0.2` 是 breaking pre-1 minor。v1 策略不兼容，从 0.0.2 升级前必须完成下文的迁移步骤。
 
@@ -12,15 +12,14 @@ CLIProxyAPI（CPA）原生动态库插件。CPA 继续使用顶层 `api-keys` �
 - 没有关联策略的现有 Key 默认允许全部模型。
 - 已有关联策略时：`deny_models` 优先；`allow_models` 非空时作为白名单；`allow_models` 为空时允许所有未被 deny 的模型。
 - `*` 匹配任意长度字符（包括 `/`），`?` 匹配一个字符；匹配区分大小写。
-- 模型名优先取 CPA 的 `RequestedModel`，为空时取 `Model`。
+- 调用请求中的模型名优先取 CPA 的 `RequestedModel`，为空时取 `Model`。目录按返回的模型 ID 应用同一策略。
 
-本插件不是认证层。未知或无效 Key 是否可用，由 CPA 顶层 `api-keys` 决定；不要把 Key 只写在插件配置中。
+本插件不是认证层。未知或无效 Key 是否可用，由 CPA 的 `access.api-keys` 决定；不要把 Key 只写在插件配置中。
 
 ## 兼容性
 
-- CLIProxyAPI **v7.2.103 或更新版本**。
-- 最低要求 CPA 插件 RPC schema 2，用于 RequestInterceptor 主动返回结构化 `403`；插件最高声明 schema 6，在新后端上保留管理响应的原始业务字符串，避免 HTML 实体转义改变模型规则或路径。
-- RPC schema 与策略文件版本独立：策略仍为 **version 2**，无需迁移。宿主协商 schema 2–5 时，是否转义管理响应取决于宿主实现；使用含特殊字符的路径或规则时建议升级到支持 schema 6 的后端。
+- CLIProxyAPI **v8.0.78 或更新版本**。模型目录过滤依赖宿主向插件传递 `Kind: model_list` 以及认证后的 `Metadata.caller_scope`。
+- 插件要求 RPC schema 10 或更高，当前声明 schema 10。策略文件仍使用 **version 2**，已有规则无需迁移。
 - 支持 CPA 动态插件的 CGO 构建；需要 Go 1.24、C 编译器和 `CGO_ENABLED=1`。
 - 可通过任一 Management API 响应头 `X-CPA-SUPPORT-PLUGIN: 1` 确认 CPA 二进制支持插件。
 
@@ -74,8 +73,9 @@ make package VERSION=0.2.1
 将 [`config.example.yaml`](./config.example.yaml) 合并到 CPA `config.yaml`。首次启动建议使用内联空策略，不要引用尚不存在的文件：
 
 ```yaml
-api-keys:
-  - "replace-with-a-real-api-key"
+access:
+  api-keys:
+    - "replace-with-a-real-api-key"
 
 plugins:
   enabled: true
@@ -88,7 +88,7 @@ plugins:
       policies: []
 ```
 
-此状态下，CPA 顶层 `api-keys` 仍负责认证，插件对所有已认证 Key 默认允许全部模型。随后应在维护窗口内通过 Web UI 为需要限制的 Key 生成 v2 策略。
+此状态下，CPA 的 `access.api-keys` 负责认证，插件对所有已认证 Key 默认允许全部模型。随后应在维护窗口内通过 Web UI 为需要限制的 Key 生成 v2 策略。
 
 ### 3. 默认持久化
 
@@ -126,10 +126,10 @@ volumes:
 v1 的 Key 身份和 v2 的 `caller_scope` 架构不同，旧策略不能原地转换。升级前必须：
 
 1. 在受控维护窗口内停止外部流量，并备份 CPA 配置和旧策略。
-2. 确保每个仍需使用的**原始 Key**都保留或迁移到 CPA 顶层 `api-keys`。只有旧 `key_sha256` 而没有原始 Key 时，无法把该凭据恢复到 CPA；应创建替代 Key 并更新客户端。
+2. 确保每个仍需使用的**原始 Key**都保留或迁移到 CPA 的 `access.api-keys`。只有旧 `key_sha256` 而没有原始 Key 时，无法把该凭据恢复到 CPA；应创建替代 Key 并更新客户端。
 3. 从插件配置和旧策略中移除 v1 字段：`keys`、`default_action`、`models_endpoint`、`allow_query_keys`。
 4. 移除指向 v1 文件的 `policy_file`，先改为内联 `version: 2`、`policies: []`。不要让 0.1.0 读取 v1 文件；它会拒绝 v1 并在首次启动时 fail closed。
-5. 安装 0.1.0 并重启 CPA，先验证顶层 Key 仍由 CPA 正常认证。
+5. 安装 0.1.0 并重启 CPA，先验证下游 Key 仍由 CPA 正常认证。
 6. 打开 Web UI，读取当前 CPA Key，并为需要限制的 Key **重新生成 v2 策略**。
 7. 打开新版 Web UI，让它自动创建并配置默认 `config.toml`，重新核对并保存。若使用显式自定义路径，则先创建有效的 v2 文件。
 
@@ -152,9 +152,9 @@ http://<CPA_HOST>:<CPA_PORT>/v0/resource/plugins/key-model-access/settings
 条件不满足或连接失败时，页面提供密码输入框，可手动填写当前 CPA 的 Management Key，也可重新读取 CPAMC 会话。手动密钥仅保留在当前页面内存中，提交后清空输入框，刷新页面后需重新填写；不会写入 Local Storage / Session Storage，也不会修改 CPAMC 登录状态。手动连接不受 CPAMC 存储变更影响，但 CPA 返回未授权时仍会结束会话。接入成功后 UI 会：
 
 1. 若尚未持久化，读取 CPA 的 `plugins_dir`，创建 `<plugins.dir>/key-model-access/config.toml`，再通过 CPA 官方插件配置 API 写入 `policy_file`；
-2. `GET /v0/management/api-keys`，只读获取 CPA 当前顶层 Key；
+2. `GET /v0/management/api-keys`，只读获取 CPA 当前下游 Key；
 3. 在浏览器内按 CPA 的规则计算对应 `caller_scope`；
-4. 临时使用第一个 CPA API Key 读取 `GET /v1/models`，生成可搜索、多选的模型目录；
+4. 通过 Management Key 请求插件的 `GET /v0/management/plugins/key-model-access/models`，读取 CPA 为各上游凭据注册的模型，生成可搜索、多选的目录；
 5. 读取插件 v2 策略并按 scope 关联；
 6. 通过选择器编辑、保存 `allow_models` 和 `deny_models`。选择器提供精确模型、全部模型 `*` 及当前目录可识别的常用模型家族通配符；已有的其他自定义通配符会继续保留并显示其目录匹配结果。
 
@@ -164,7 +164,7 @@ UI 不创建、修改或删除 CPA Key，也不会向 `/v0/management/api-keys` 
 
 ### UI 安全边界
 
-- `/v0/management/api-keys` 会把原始 Key 返回给已通过 Management 认证的浏览器。UI 在 JavaScript 中短暂使用原始 Key 计算 scope、匹配 CPAMC 备注和读取模型目录，随后尽力清空临时数组。UI 显示掩码片段（例如 `sk-abcd••••••wxyz`，少于 8 位则完全隐藏），以及该 Key 对应的本地备注（若有）。完整 Key 不会写入 DOM、Local Storage、Session Storage、URL 或插件策略，备注也不会写入插件策略。
+- `/v0/management/api-keys` 会把原始 Key 返回给已通过 Management 认证的浏览器。UI 在 JavaScript 中短暂使用原始 Key 计算 scope、匹配 CPAMC 备注，随后尽力清空临时数组。UI 显示掩码片段（例如 `sk-abcd••••••wxyz`，少于 8 位则完全隐藏），以及该 Key 对应的本地备注（若有）。完整 Key 不会写入 DOM、Local Storage、Session Storage、URL 或插件策略，备注也不会写入插件策略。
 - CPAMC 会话的 Management Key 由 CPAMC 决定是否持久化。插件复用或手动输入的密钥均只在当前页面 JavaScript 内存中使用，不会再次写入存储。
 - CPAMC 当前的浏览器端存储是可逆混淆，不是安全边界。同源页面、浏览器扩展和同机恶意软件均属于信任边界。
 - 页面只读同步 CPAMC 的主题，不再维护独立主题偏好。
@@ -245,6 +245,7 @@ YAML、TOML 和 JSON 都严格拒绝未知字段、重复 `caller_scope` 和非 
 | 方法 | 路径 | 用途 |
 |---|---|---|
 | `GET` | `/v0/management/plugins/key-model-access/status` | 查看版本、策略来源、持久化和 fail-closed 状态；不返回 scope |
+| `GET` | `/v0/management/plugins/key-model-access/models` | 获取 CPA 本地注册的模型 ID，不返回凭据信息 |
 | `GET` | `/v0/management/plugins/key-model-access/policies` | 获取完整 v2 策略和 revision |
 | `PUT` | `/v0/management/plugins/key-model-access/policies` | 用 JSON 原子替换全部策略 |
 | `POST` | `/v0/management/plugins/key-model-access/reload` | 从已配置的 `policy_file` 重载 |
@@ -320,9 +321,13 @@ curl -sS \
 }
 ```
 
-使用同一个 CPA 顶层 Key 测试允许和拒绝模型：
+使用同一个 CPA 下游 Key 测试目录和调用权限：
 
 ```bash
+# 目录应只显示该 Key 允许的模型
+curl -i "$CPA_URL/v1/models" \
+  -H 'Authorization: Bearer your-existing-cpa-key'
+
 # 应允许
 curl -i "$CPA_URL/v1/chat/completions" \
   -H 'Authorization: Bearer your-existing-cpa-key' \
@@ -335,7 +340,7 @@ curl -i "$CPA_URL/v1/chat/completions" \
   -H 'Content-Type: application/json' \
   -d '{"model":"claude-sonnet","messages":[{"role":"user","content":"hi"}]}'
 
-# 不在 CPA 顶层 api-keys 中的 Key 应由 CPA 认证层拒绝，而不是由插件管理
+# 未配置的下游 Key 应由 CPA 认证层拒绝
 curl -i "$CPA_URL/v1/chat/completions" \
   -H 'Authorization: Bearer unknown-key' \
   -H 'Content-Type: application/json' \
@@ -356,15 +361,14 @@ git diff --check
 
 CPA 的 RequestInterceptor 目前没有完整覆盖以下路径或流程：
 
-- `/v1/models`
 - `alpha/search`
 - Codex Live（包括相关实时/sideband 流程）
 
-因此不要依赖本插件对这些功能实施完整的 per-Key 模型隔离。`/v1/models` 可能返回 CPA 全局模型列表。对于确实进入 RequestInterceptor 的请求，已配置策略的 Key 若缺少模型名会 fail closed；未配置策略的 Key 仍按默认规则允许。若上述未覆盖入口必须受限，应在 CPA/上游 provider 配置、反向代理或网络层禁用或限制，直到 CPA 提供完整 hook 覆盖。
+对于进入 RequestInterceptor 的请求，已配置策略的 Key 缺少模型名时会被拒绝。模型目录过滤使用认证后的 caller scope。存在策略而身份缺失，或策略不可用时，插件返回空目录。
 
 此外：
 
-- 本插件只约束进入 RequestInterceptor 且带可识别模型名的请求，不过滤 CPA 的全局模型目录。
+- 管理页目录来自 CPA 的本地凭据注册表（含配置文件中的上游 API Key）。仅在 Home 远端目录中出现的模型可通过策略文件或 Management API 添加规则。
 - 有策略存在但 CPA 未提供 `caller_scope` 时，已覆盖请求会 fail closed；完全空策略时，没有 scope 的请求不会由插件拒绝，认证仍由 CPA 负责。
 - 首次加载无效配置、旧 v1 文件或不存在的 `policy_file` 会使插件策略 fail closed；后续无效热更新会保留最后一个有效快照。
 - 策略变化只影响后续请求，不会中断已经在上游执行的请求。
@@ -372,7 +376,7 @@ CPA 的 RequestInterceptor 目前没有完整覆盖以下路径或流程：
 ## 安全说明
 
 - 原生插件与 CPA 同进程运行，只安装可信构建产物。
-- 原始 API Key 只应存在于 CPA 顶层 `api-keys`；不要放进插件配置、策略文件或 PUT 请求。
+- 原始 API Key 只应存在于 CPA 的 `access.api-keys`；不要放进插件配置、策略文件或 PUT 请求。
 - `caller_scope` 是稳定的伪名标识，仍应视为敏感管理数据；不要公开策略响应和文件。
 - Management API 响应设置 `Cache-Control: no-store`；应限制 Management Key 权限并定期轮换。
 - 默认策略位于 `<plugins.dir>/key-model-access/config.toml`；应限制插件目录权限并将该插件专属子目录纳入安全备份。显式 `policy_file` 同样应仅允许 CPA 进程用户访问。

@@ -8,9 +8,9 @@ import (
 
 const (
 	abiVersion              uint32 = 1
-	rpcSchemaVersion        uint32 = 6 // Raw management responses; no HTML entity rewriting.
-	minimumRPCSchemaVersion uint32 = 2 // Structured interceptor termination.
-	policySchemaVersion            = 2 // Persisted policy format, independent of RPC.
+	rpcSchemaVersion        uint32 = 10
+	minimumRPCSchemaVersion uint32 = 10 // The supported CPA v8 host generation.
+	policySchemaVersion            = 2  // Persisted policy format, independent of RPC.
 	pluginID                       = "key-model-access"
 )
 
@@ -21,6 +21,7 @@ const (
 	methodPluginReconfigure      = "plugin.reconfigure"
 	methodRequestInterceptBefore = "request.intercept_before"
 	methodRequestInterceptAfter  = "request.intercept_after"
+	methodResponseInterceptAfter = "response.intercept_after"
 	methodManagementRegister     = "management.register"
 	methodManagementHandle       = "management.handle"
 )
@@ -66,8 +67,22 @@ type configField struct {
 }
 
 type capabilities struct {
-	RequestInterceptor bool `json:"request_interceptor"`
-	ManagementAPI      bool `json:"management_api"`
+	RequestInterceptor  bool `json:"request_interceptor"`
+	ResponseInterceptor bool `json:"response_interceptor"`
+	ManagementAPI       bool `json:"management_api"`
+}
+
+type responseInterceptRequest struct {
+	Kind         string
+	SourceFormat string
+	Body         []byte
+	Metadata     map[string]any
+}
+
+type responseInterceptResponse struct {
+	Headers      http.Header `json:",omitempty"`
+	Body         []byte      `json:",omitempty"`
+	ClearHeaders []string    `json:",omitempty"`
 }
 
 type requestInterceptRequest struct {
@@ -111,11 +126,18 @@ type resourceRoute struct {
 }
 
 type managementRequest struct {
-	Method  string      `json:"Method"`
-	Path    string      `json:"Path"`
-	Headers http.Header `json:"Headers"`
-	Query   url.Values  `json:"Query"`
-	Body    []byte      `json:"Body"`
+	Method         string      `json:"Method"`
+	Path           string      `json:"Path"`
+	Headers        http.Header `json:"Headers"`
+	Query          url.Values  `json:"Query"`
+	Body           []byte      `json:"Body"`
+	HostCallbackID string      `json:"host_callback_id"`
+}
+
+type hostAuthModelsResponse struct {
+	Credentials []struct {
+		Models []string `json:"models"`
+	} `json:"credentials"`
 }
 
 type managementResponse struct {

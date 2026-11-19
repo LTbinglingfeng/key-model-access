@@ -33,6 +33,25 @@ typedef struct {
 extern int cliproxyPluginCall(char*, uint8_t*, size_t, cliproxy_buffer*);
 extern void cliproxyPluginFree(void*, size_t);
 extern void cliproxyPluginShutdown(void);
+
+static cliproxy_host_api host_api;
+
+static void store_host_api(const cliproxy_host_api* host) {
+    host_api = *host;
+}
+
+static int call_host_api(const char* method, const uint8_t* request, size_t len, cliproxy_buffer* response) {
+    if (!host_api.call) {
+        return 1;
+    }
+    return host_api.call(host_api.host_ctx, method, request, len, response);
+}
+
+static void free_host_buffer(cliproxy_buffer buffer) {
+    if (host_api.free_buffer && buffer.ptr) {
+        host_api.free_buffer(buffer.ptr, buffer.len);
+    }
+}
 */
 import "C"
 
@@ -45,10 +64,11 @@ import (
 func main() {}
 
 //export cliproxy_plugin_init
-func cliproxy_plugin_init(_ *C.cliproxy_host_api, plugin *C.cliproxy_plugin_api) C.int {
-	if plugin == nil {
+func cliproxy_plugin_init(host *C.cliproxy_host_api, plugin *C.cliproxy_plugin_api) C.int {
+	if host == nil || plugin == nil {
 		return 1
 	}
+	C.store_host_api(host)
 	plugin.abi_version = C.uint32_t(abiVersion)
 	plugin.call = C.cliproxy_plugin_call_fn(C.cliproxyPluginCall)
 	plugin.free_buffer = C.cliproxy_plugin_free_fn(C.cliproxyPluginFree)
@@ -101,6 +121,8 @@ func handleMethod(method string, request []byte) ([]byte, error) {
 		return okEnvelope(pluginRegistration())
 	case methodRequestInterceptBefore, methodRequestInterceptAfter:
 		return interceptRequest(request)
+	case methodResponseInterceptAfter:
+		return interceptModelList(request)
 	case methodManagementRegister:
 		return okEnvelope(managementRegistration())
 	case methodManagementHandle:
@@ -131,8 +153,9 @@ func pluginRegistration() registration {
 			},
 		},
 		Capabilities: capabilities{
-			RequestInterceptor: hostSchema >= minimumRPCSchemaVersion,
-			ManagementAPI:      true,
+			RequestInterceptor:  true,
+			ResponseInterceptor: true,
+			ManagementAPI:       true,
 		},
 	}
 }
@@ -175,4 +198,35 @@ func decodeJSON(raw []byte, target any) error {
 		return fmt.Errorf("decode request: %w", err)
 	}
 	return nil
+}
+
+func hostAuthModels(callbackID string) (hostAuthModelsResponse, error) {
+	var result hostAuthModelsResponse
+	request, err := json.Marshal(struct {
+		HostCallbackID string `json:"host_callback_id"`
+	}{HostCallbackID: callbackID})
+	if err != nil {
+		return result, err
+	}
+	method := C.CString("host.auth.models")
+	defer C.free(unsafe.Pointer(method))
+	requestBytes := C.CBytes(request)
+	defer C.free(requestBytes)
+	var response C.cliproxy_buffer
+	code := C.call_host_api(method, (*C.uint8_t)(requestBytes), C.size_t(len(request)), &response)
+	defer C.free_host_buffer(response)
+	if code != 0 || response.ptr == nil || response.len == 0 {
+		return result, fmt.Errorf("host.auth.models returned code %d", code)
+	}
+	var env envelope
+	if err := decodeJSON(C.GoBytes(response.ptr, C.int(response.len)), &env); err != nil {
+		return result, err
+	}
+	if !env.OK {
+		return result, fmt.Errorf("host.auth.models failed")
+	}
+	if err := decodeJSON(env.Result, &result); err != nil {
+		return result, err
+	}
+	return result, nil
 }

@@ -150,11 +150,10 @@ func configure(raw []byte) error {
 	if err := decodeJSON(raw, &req); err != nil {
 		return err
 	}
-	cfg := pluginConfig{Version: policySchemaVersion}
 	if req.SchemaVersion < minimumRPCSchemaVersion {
-		globalState.failClosedOrPreserve(cfg, req.SchemaVersion, fmt.Errorf("%s requires CPA plugin RPC schema 2 or newer (CPA v7.2.103+)", pluginID))
-		return nil
+		return fmt.Errorf("%s requires CLIProxyAPI v8.0.78 or later (RPC schema %d or later)", pluginID, minimumRPCSchemaVersion)
 	}
+	cfg := pluginConfig{Version: policySchemaVersion}
 	if len(req.ConfigYAML) > 0 {
 		if err := decodeStrictYAML(req.ConfigYAML, &cfg); err != nil {
 			globalState.failClosedOrPreserve(cfg, req.SchemaVersion, fmt.Errorf("decode plugin config: %w", err))

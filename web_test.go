@@ -56,7 +56,7 @@ func TestSettingsPageEmbedsAssetsWithNonceCSP(t *testing.T) {
 		"is-embedded",
 		"const PATHS",
 		"/v0/management/api-keys",
-		"/v1/models",
+		"/v0/management/plugins/key-model-access/models",
 		"/initialize-storage",
 		"/v0/management/plugins/key-model-access/config",
 		"plugins_dir",
@@ -76,7 +76,7 @@ func TestSettingsPageEmbedsAssetsWithNonceCSP(t *testing.T) {
 	}
 	for _, forbidden := range []string{
 		"addKeyButton",
-		"credential",
+		"/v1/models",
 		"delete-key",
 		"default_action",
 		"models_endpoint",

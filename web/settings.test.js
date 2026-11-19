@@ -21,7 +21,7 @@ function load(respond = () => { throw new Error('Unexpected fetch'); }, globals 
     }
   });
   vm.runInContext(source.slice(0, source.indexOf(marker)) +
-    'globalThis.helpers = { pluginsDirFromList, initializeDefaultPersistence, fetchCurrentKeys, api, normalizePolicyDocument, readCPAMCManagementKey, readStoredValue, connectManually, connectFromCPAMC, renderNav, renderEditor, serializablePolicy, state, MESSAGES, t, getLocale: () => locale }; })();', context);
+    'globalThis.helpers = { pluginsDirFromList, initializeDefaultPersistence, fetchCurrentKeys, fetchModelCatalog, api, normalizePolicyDocument, readCPAMCManagementKey, readStoredValue, connectManually, connectFromCPAMC, renderNav, renderEditor, serializablePolicy, state, MESSAGES, t, getLocale: () => locale }; })();', context);
   return context.helpers;
 }
 
@@ -142,26 +142,35 @@ test('null and empty API key arrays accepted, missing/invalid types rejected', a
   for (const raw of [null, []]) {
     const helpers = load(() => ({ 'api-keys': raw }));
     assert.equal((await helpers.fetchCurrentKeys()).length, 0);
-    const result = await helpers.fetchCurrentKeys({ includeCatalog: true });
-    assert.equal(result.keys.length, 0);
-    assert.equal(result.catalog.models.length, 0);
   }
   for (const payload of [null, {}, { 'api-keys': undefined }, ...['', 'key', 0, false, {}].map(value => ({ 'api-keys': value }))]) {
     await assert.rejects(load(() => payload).fetchCurrentKeys(), /API Key/);
   }
 });
 
-test('API keys are hashed and sent to model catalog without entity decoding', async () => {
-  const key = 'sk-&amp;&lt;&#34;&#39;';
+test('catalog uses only Management Key and preserves model IDs', async () => {
+  let calls = 0;
   const helpers = load((path, options) => {
-    if (path === '/v0/management/api-keys') return { 'api-keys': [key] };
-    assert.equal(path, '/v1/models');
-    assert.equal(options.headers.Authorization, `Bearer ${key}`);
-    return { data: [{ id: 'model-&lt;' }] };
+    calls++;
+    assert.equal(path, '/v0/management/plugins/key-model-access/models');
+    assert.equal(options.headers.Authorization, 'Bearer management-test-key');
+    return { models: ['model-b', 'a&b', 'model-a'] };
   });
-  const result = await helpers.fetchCurrentKeys({ includeCatalog: true });
-  assert.equal(result.keys[0].scope, createHash('sha256').update(`cli-proxy-api:caller-scope:v1\0${key}`).digest('hex'));
-  assert.equal(result.catalog.models[0].id, 'model-&lt;');
+  helpers.state.token = 'management-test-key';
+  const result = await helpers.fetchModelCatalog();
+  assert.equal(result.error, '');
+  assert.equal(JSON.stringify(result.models.map(model => model.id)), JSON.stringify(['a&b', 'model-a', 'model-b']));
+  assert.equal(calls, 1);
+});
+
+test('downstream API keys are hashed without entity decoding', async () => {
+  const key = 'sk-&amp;&lt;&#34;&#39;';
+  const helpers = load((path) => {
+    assert.equal(path, '/v0/management/api-keys');
+    return { 'api-keys': [key] };
+  });
+  const keys = await helpers.fetchCurrentKeys();
+  assert.equal(keys[0].scope, createHash('sha256').update(`cli-proxy-api:caller-scope:v1\0${key}`).digest('hex'));
 });
 
 test('CPAMC key names match by fingerprint, render as text, and stay out of policy', async () => {

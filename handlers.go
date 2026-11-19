@@ -17,6 +17,7 @@ import (
 const (
 	policiesPath          = "/v0/management/plugins/key-model-access/policies"
 	statusPath            = "/v0/management/plugins/key-model-access/status"
+	modelsPath            = "/v0/management/plugins/key-model-access/models"
 	reloadPath            = "/v0/management/plugins/key-model-access/reload"
 	initializeStoragePath = "/v0/management/plugins/key-model-access/initialize-storage"
 	settingsResourcePath  = "/v0/resource/plugins/key-model-access/settings"
@@ -90,6 +91,7 @@ func managementRegistration() managementRegistrationResponse {
 	return managementRegistrationResponse{
 		Routes: []managementRoute{
 			{Method: http.MethodGet, Path: statusPath, Description: "Show key-model-access status without exposing API keys or caller scopes."},
+			{Method: http.MethodGet, Path: modelsPath, Description: "List the model IDs registered for CPA credentials."},
 			{Method: http.MethodGet, Path: policiesPath, Description: "List caller-scope model policies."},
 			{Method: http.MethodPut, Path: policiesPath, Description: "Replace all caller-scope model policies."},
 			{Method: http.MethodPost, Path: reloadPath, Description: "Reload policies from policy_file."},
@@ -115,6 +117,8 @@ func handleManagement(raw []byte) ([]byte, error) {
 		return settingsPage()
 	case method == http.MethodGet && path == statusPath:
 		return managementStatus()
+	case method == http.MethodGet && path == modelsPath:
+		return managementModelCatalog(req.HostCallbackID)
 	case method == http.MethodGet && path == policiesPath:
 		return managementPolicies()
 	case method == http.MethodPut && path == policiesPath:
