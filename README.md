@@ -1,6 +1,6 @@
 # CPA Key Model Access 插件
 
-CLIProxyAPI（CPA）原生动态库插件。CPA 使用 `access.api-keys` 完成下游认证。插件根据 CPA 提供的 `Metadata.caller_scope` 为已有 API Key 执行模型权限，并按同一策略过滤 `GET /v1/models`。
+CLIProxyAPI（CPA）原生动态库插件。CPA 使用 `access.api-keys` 完成下游认证。插件根据 CPA 提供的 `Metadata.caller_scope` 为已有 API Key 执行模型权限，并按同一策略过滤 `GET /v1/models` 和 `GET /v1beta/models`。
 
 > `0.1.x` 相对 `0.0.2` 是 breaking pre-1 minor。v1 策略不兼容，从 0.0.2 升级前必须完成下文的迁移步骤。
 
@@ -364,7 +364,7 @@ CPA 的 RequestInterceptor 目前没有完整覆盖以下路径或流程：
 - `alpha/search`
 - Codex Live（包括相关实时/sideband 流程）
 
-对于进入 RequestInterceptor 的请求，已配置策略的 Key 缺少模型名时会被拒绝。模型目录过滤使用认证后的 caller scope。存在策略而身份缺失，或策略不可用时，插件返回空目录。
+对于进入 RequestInterceptor 的请求，已配置策略的 Key 缺少模型名时会被拒绝。模型目录过滤使用认证后的 caller scope。Gemini 列表按去掉一层 `models/` 前缀的模型名匹配规则，返回条目保留原始资源名。Gemini 单模型详情由宿主单独处理，不经过列表过滤。存在策略而身份缺失，或策略不可用时，插件返回空目录。
 
 此外：
 

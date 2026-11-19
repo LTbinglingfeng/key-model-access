@@ -25,7 +25,13 @@ func TestModelListInterceptor(t *testing.T) {
 		{"missing scope", "model_list", "openai", "", `{"data":[{"id":"gpt-5"}]}`, `{"data":[]}`},
 		{"malformed catalog", "model_list", "openai", scopeA, `{"data":{}}`, string(emptyModelList("openai"))},
 		{"unrelated execution", "execution", "openai", scopeA, `{"data":[{"id":"other"}]}`, ""},
-		{"unrelated gemini catalog", "model_list", "gemini", scopeA, `{"models":[{"name":"models/other"}]}`, ""},
+		{"gemini allow and deny", "model_list", "gemini", scopeA,
+			`{"models":[{"name":"models/gpt-5","displayName":"GPT"},{"name":"models/gpt-5-preview"},{"name":"models/other","id":"gpt-5"}]}`,
+			`{"models":[{"name":"models/gpt-5","displayName":"GPT"}]}`},
+		{"gemini missing scope", "model_list", "gemini", "", `{"models":[{"name":"models/gpt-5"}]}`, `{"models":[]}`},
+		{"gemini unconfigured key", "model_list", "gemini", scopeB, `{"models":[{"name":"models/other"}]}`, ""},
+		{"gemini malformed catalog", "model_list", "gemini", scopeA, `{"models":{}}`, `{"models":[]}`},
+		{"unknown format", "model_list", "other", scopeA, `{"models":[]}`, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			raw, err := json.Marshal(responseInterceptRequest{
@@ -44,7 +50,7 @@ func TestModelListInterceptor(t *testing.T) {
 			if string(response.Body) != tc.want {
 				t.Fatalf("body = %s, want %s", response.Body, tc.want)
 			}
-			if tc.kind == "model_list" && tc.format != "gemini" {
+			if tc.kind == "model_list" && tc.format != "other" {
 				if got := response.Headers.Get("Cache-Control"); got != "private, no-store" {
 					t.Fatalf("Cache-Control = %q", got)
 				}
@@ -63,6 +69,7 @@ func TestLegacyModelListWithoutKind(t *testing.T) {
 		name, format, model, input, body, want string
 	}{
 		{"openai list", "openai", "", "", `{"object":"list","data":[{"id":"hidden"}]}`, `{"data":[],"object":"list"}`},
+		{"gemini list", "gemini", "", "", `{"models":[{"name":"models/hidden"}]}`, `{"models":[]}`},
 		{"codex list", "openai", "", "", `{"models":[{"slug":"hidden"}]}`, `{"models":[]}`},
 		{"claude list", "claude", "", "", `{"data":[{"id":"hidden"}]}`, `{"data":[],"first_id":"","last_id":""}`},
 		{"execution with list-shaped output", "openai", "allowed", "", `{"data":[{"id":"hidden"}]}`, ""},

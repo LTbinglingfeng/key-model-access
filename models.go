@@ -43,7 +43,7 @@ func interceptModelList(raw []byte) ([]byte, error) {
 		return nil, err
 	}
 	result := responseInterceptResponse{}
-	if (req.SourceFormat != "openai" && req.SourceFormat != "claude") || !isModelList(req) {
+	if (req.SourceFormat != "openai" && req.SourceFormat != "claude" && req.SourceFormat != "gemini") || !isModelList(req) {
 		return okEnvelope(result)
 	}
 	result.Headers = http.Header{"Cache-Control": {"private, no-store"}}
@@ -81,6 +81,9 @@ func isModelList(req responseInterceptRequest) bool {
 	if json.Unmarshal(req.Body, &catalog) != nil {
 		return false
 	}
+	if req.SourceFormat == "gemini" {
+		return len(catalog.Models) > 0 && catalog.Models[0] == '['
+	}
 	if req.SourceFormat == "claude" {
 		return len(catalog.Data) > 0 && catalog.Data[0] == '['
 	}
@@ -95,7 +98,11 @@ func filterModelList(raw []byte, sourceFormat string, policy runtimePolicy, hide
 
 	changed := false
 	found := false
-	for _, key := range []string{"data", "models"} {
+	keys := []string{"data", "models"}
+	if sourceFormat == "gemini" {
+		keys = []string{"models"}
+	}
+	for _, key := range keys {
 		value, exists := payload[key]
 		if !exists {
 			continue
@@ -108,7 +115,7 @@ func filterModelList(raw []byte, sourceFormat string, policy runtimePolicy, hide
 		visible := make([]json.RawMessage, 0, len(items))
 		var first, last string
 		for _, item := range items {
-			id := catalogModelID(item)
+			id := catalogModelID(item, sourceFormat)
 			if hideAll || id == "" || !policyAllows(policy, catalogPolicyModel(sourceFormat, id)) {
 				continue
 			}
@@ -138,13 +145,17 @@ func filterModelList(raw []byte, sourceFormat string, policy runtimePolicy, hide
 	return body
 }
 
-func catalogModelID(item json.RawMessage) string {
+func catalogModelID(item json.RawMessage, sourceFormat string) string {
 	var entry struct {
 		ID   string `json:"id"`
 		Slug string `json:"slug"`
+		Name string `json:"name"`
 	}
 	if json.Unmarshal(item, &entry) != nil {
 		return ""
+	}
+	if sourceFormat == "gemini" {
+		return strings.TrimPrefix(strings.TrimSpace(entry.Name), "models/")
 	}
 	if id := strings.TrimSpace(entry.ID); id != "" {
 		return id
@@ -165,6 +176,9 @@ func catalogPolicyModel(sourceFormat, id string) string {
 }
 
 func emptyModelList(sourceFormat string) []byte {
+	if sourceFormat == "gemini" {
+		return []byte(`{"models":[]}`)
+	}
 	if sourceFormat == "claude" {
 		return []byte(`{"data":[],"has_more":false,"first_id":"","last_id":""}`)
 	}
