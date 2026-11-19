@@ -21,7 +21,7 @@ function load(respond = () => { throw new Error('Unexpected fetch'); }, globals 
     }
   });
   vm.runInContext(source.slice(0, source.indexOf(marker)) +
-    'globalThis.helpers = { pluginsDirFromList, initializeDefaultPersistence, fetchCurrentKeys, fetchModelCatalog, api, normalizePolicyDocument, readCPAMCManagementKey, readStoredValue, connectManually, connectFromCPAMC, renderNav, renderEditor, serializablePolicy, state, MESSAGES, t, getLocale: () => locale }; })();', context);
+    'globalThis.helpers = { pruneDeletedKeyPolicies, pluginsDirFromList, initializeDefaultPersistence, fetchCurrentKeys, fetchModelCatalog, api, normalizePolicyDocument, readCPAMCManagementKey, readStoredValue, connectManually, connectFromCPAMC, renderNav, renderEditor, serializablePolicy, state, MESSAGES, t, getLocale: () => locale }; })();', context);
   return context.helpers;
 }
 
@@ -145,6 +145,45 @@ test('null and empty API key arrays accepted, missing/invalid types rejected', a
   }
   for (const payload of [null, {}, { 'api-keys': undefined }, ...['', 'key', 0, false, {}].map(value => ({ 'api-keys': value }))]) {
     await assert.rejects(load(() => payload).fetchCurrentKeys(), /API Key/);
+  }
+});
+
+test('deleted key cleanup preserves live policies and uses the loaded revision', async () => {
+  const scope = key => createHash('sha256').update(`cli-proxy-api:caller-scope:v1\0${key}`).digest('hex');
+  const live = { caller_scope: scope('current'), allow_models: ['model-a'], deny_models: [] };
+  const removed = { caller_scope: scope('deleted'), allow_models: [], deny_models: ['model-b'] };
+  for (const current of [[], ['current']]) {
+    let writes = 0;
+    const helpers = load((path, options) => {
+      if (path.endsWith('/api-keys')) return { 'api-keys': [...current] };
+      assert.ok(path.endsWith('/policies'));
+      assert.equal(options.method, 'PUT');
+      assert.equal(options.headers['If-Match'], '"rev-7"');
+      const policy = JSON.parse(options.body);
+      assert.deepEqual(policy.policies, current.length ? [live] : []);
+      writes++;
+      return { policy, revision: 8 };
+    });
+    const keys = await helpers.fetchCurrentKeys();
+    const cleaned = await helpers.pruneDeletedKeyPolicies({ policy: { version: 2, policies: [live, removed] }, revision: 7 }, keys);
+    assert.equal(cleaned.revision, 8);
+    assert.equal(await helpers.pruneDeletedKeyPolicies(cleaned, keys), cleaned);
+    assert.equal(writes, 1);
+  }
+});
+
+test('changed or malformed key inventory aborts cleanup before writing', async () => {
+  const loaded = { revision: 3, policy: { version: 2, policies: [
+    { caller_scope: 'a'.repeat(64), allow_models: ['model-a'], deny_models: [] }
+  ] } };
+  for (const inventory of [['appeared'], [null], [{}]]) {
+    const requests = [];
+    const helpers = load((path, options) => {
+      requests.push(options.method);
+      return { 'api-keys': inventory };
+    });
+    await assert.rejects(helpers.pruneDeletedKeyPolicies(loaded, []));
+    assert.deepEqual(requests, ['GET']);
   }
 });
 

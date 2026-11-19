@@ -85,12 +85,9 @@
       "overview.subtitle": "为 CPA 现有 API Key 配置可访问的模型。Key 的创建与删除由 CPA 管理；未配置规则的 Key 默认允许全部模型。",
       "overview.lastErrorTitle": "最近一次配置存在问题",
       "overview.lastError": "{error}。当前仍在使用最后一个有效策略。",
-      "overview.staleTitle": "{count} 条失效策略",
-      "overview.staleBody": "这些 caller scope 不对应 CPA 当前 Key。保存时会原样保留，不会静默删除；确认旧 Key 已永久移除后，请通过策略文件处理。",
       "overview.statsLabel": "权限统计",
       "overview.configured": "已配置",
       "overview.defaultAllow": "默认允许",
-      "overview.stale": "失效策略",
       "overview.status": "运行状态",
       "overview.authMode": "认证模式",
       "overview.identitySource": "身份来源",
@@ -213,12 +210,9 @@
       "overview.subtitle": "Configure which models each existing CPA API key can access. Keys are created and deleted in CPA; keys without rules can access all models by default.",
       "overview.lastErrorTitle": "The latest configuration has a problem",
       "overview.lastError": "{error}. The last valid policy is still in effect.",
-      "overview.staleTitle": ({ count }) => `${count} stale ${plural(count, "policy", "policies")}`,
-      "overview.staleBody": "These caller scopes don't match any current CPA key. They are kept as-is on save and never silently deleted; once you have confirmed the old keys are permanently removed, clean them up in the policy file.",
       "overview.statsLabel": "Access statistics",
       "overview.configured": "Configured",
       "overview.defaultAllow": "Default allow",
-      "overview.stale": "Stale policies",
       "overview.status": "Runtime status",
       "overview.authMode": "Auth mode",
       "overview.identitySource": "Identity source",
@@ -357,7 +351,6 @@
     models: [],
     modelsError: "",
     persistenceSetupError: "",
-    stalePolicies: [],
     revision: 0,
     selectedIndex: -1,
     dirty: false,
@@ -626,6 +619,7 @@
     const values = rawKeys === null ? [] : Array.isArray(rawKeys) ? rawKeys : null;
     if (!values) throw new Error(t("error.keysUnrecognized"));
 
+    if (values.some((value) => typeof value !== "string" || !value.trim())) throw new Error(t("error.keysUnrecognized"));
     const temporaryValues = values.slice();
     const normalizedValues = temporaryValues.map((value) => String(value).trim()).filter(Boolean);
     try {
@@ -717,18 +711,37 @@
         persistenceSetupError = error.message || t("error.persistSetupFailed");
       }
     }
-    const [policies, keys, catalog] = await Promise.all([
+    const [loadedPolicies, keys, catalog] = await Promise.all([
       api(PATHS.policies, { method: "GET" }),
       fetchCurrentKeys(),
       fetchModelCatalog()
     ]);
+    const policies = await pruneDeletedKeyPolicies(loadedPolicies, keys);
+    if (policies !== loadedPolicies) status = await api(PATHS.status);
     return { status, policies, keys, catalog, persistenceSetupError };
+  }
+
+  async function pruneDeletedKeyPolicies(loaded, keys) {
+    const document = normalizePolicyDocument(loaded?.policy);
+    const scopes = scopeSet(keys);
+    const policies = document.policies.filter((policy) => scopes.has(policy.caller_scope));
+    if (policies.length === document.policies.length) return loaded;
+    if (!Number.isSafeInteger(loaded.revision) || loaded.revision < 0) {
+      throw new Error(t("error.invalidDocument"));
+    }
+    if (!setsEqual(scopes, scopeSet(await fetchCurrentKeys()))) {
+      throw new Error(t("save.keySetChanged"));
+    }
+    return api(PATHS.policies, {
+      method: "PUT",
+      headers: { "If-Match": `"rev-${loaded.revision}"` },
+      body: JSON.stringify({ version: document.version, policies })
+    });
   }
 
   function applyPolicyDocument(rawDocument) {
     const documentValue = normalizePolicyDocument(rawDocument);
     const byScope = new Map(documentValue.policies.map((policy) => [policy.caller_scope, policy]));
-    const currentScopes = new Set(state.keys.map((key) => key.scope));
 
     state.keys = state.keys.map((key) => {
       const policy = byScope.get(key.scope);
@@ -738,9 +751,6 @@
         deny_models: policy ? [...policy.deny_models] : []
       };
     });
-    state.stalePolicies = documentValue.policies
-      .filter((policy) => !currentScopes.has(policy.caller_scope))
-      .map((policy) => ({ ...policy, allow_models: [...policy.allow_models], deny_models: [...policy.deny_models] }));
   }
 
   function installRemoteData(remote, preferredScope = "") {
@@ -830,7 +840,6 @@
     state.status = null;
     state.keys = [];
     state.models = [];
-    state.stalePolicies = [];
     state.dirty = false;
     state.sessionEnded = false;
     app.hidden = true;
@@ -942,12 +951,8 @@
   function renderOverview() {
     const configured = state.keys.filter(hasRules).length;
     const defaults = state.keys.length - configured;
-    const staleCount = state.stalePolicies.length;
     const statusWarning = state.status?.last_error
       ? `<div class="notice">${icons.warning}<p><strong>${escapeHTML(t("overview.lastErrorTitle"))}</strong>${escapeHTML(t("overview.lastError", { error: state.status.last_error }))}</p></div>`
-      : "";
-    const staleWarning = staleCount
-      ? `<div class="notice">${icons.warning}<p><strong>${escapeHTML(t("overview.staleTitle", { count: staleCount }))}</strong>${escapeHTML(t("overview.staleBody"))}</p></div>`
       : "";
     const keyRows = state.keys.map((key, index) => `
       <button class="key-row" type="button" data-select="key" data-index="${index}">
@@ -962,12 +967,10 @@
         <p class="editor-subtitle">${escapeHTML(t("overview.subtitle"))}</p>
       </header>
       ${statusWarning}
-      ${staleWarning}
       <section class="stats" aria-label="${escapeHTML(t("overview.statsLabel"))}">
         ${statCard("API Keys", state.keys.length)}
         ${statCard(t("overview.configured"), configured)}
         ${statCard(t("overview.defaultAllow"), defaults)}
-        ${statCard(t("overview.stale"), staleCount, staleCount > 0)}
       </section>
       <section class="section">
         <h2 class="section-title">API Keys</h2>
@@ -1177,12 +1180,7 @@
       allow_models: [...key.allow_models],
       deny_models: [...key.deny_models]
     }));
-    const stale = state.stalePolicies.map((policy) => ({
-      caller_scope: policy.caller_scope,
-      allow_models: [...policy.allow_models],
-      deny_models: [...policy.deny_models]
-    }));
-    return { version: 2, policies: [...active, ...stale] };
+    return { version: 2, policies: active };
   }
 
   function scopeSet(keys) {

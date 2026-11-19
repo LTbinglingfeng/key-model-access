@@ -341,7 +341,7 @@ input:focus-visible { outline: none; }
 .notice strong { display: block; color: var(--warning); font-weight: 600; }
 .notice p { color: var(--text-2); }
 
-.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); box-shadow: var(--shadow-sm); }
+.stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); box-shadow: var(--shadow-sm); }
 .stat { min-width: 0; padding: 0.875rem 1rem; }
 .stat + .stat { border-left: 1px solid var(--border); }
 .stat span { display: block; color: var(--text-2); font-size: 0.75rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
